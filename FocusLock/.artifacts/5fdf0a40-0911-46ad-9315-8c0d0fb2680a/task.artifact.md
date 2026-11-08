@@ -1,0 +1,3 @@
+- [x] Fix compilation error in `MainActivity.kt`
+- [x] Verify build
+- [x] Create walkthrough

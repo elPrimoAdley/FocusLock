@@ -11,3 +11,114 @@
 #   public *;
 #}
 
+# ==============================================================================
+# FocusLock — Règles du projet (à appliquer à chaque réponse)
+# ==============================================================================
+#
+# ## 1. Projet et contraintes globales
+# - FocusLock : app Android personnelle de discipline (contrats de temps hors-écran, tâches gamifiées XP/malus, blocage d'apps par dérivation, coffre de contenu Instagram hors-ligne).
+# - Cibles : Android 14 à 17, minSdk 34, Samsung S23 et S26 (One UI). Usage personnel, installation par sideload.
+# - 100 % hors-ligne : AUCUNE permission INTERNET, aucun SDK réseau, analytics ou crash-reporting.
+# - Référentiel complet : docs/cahier-des-charges.md (V3.1). Si une règle ici contredit le cahier, le signaler au lieu de choisir.
+#
+# ## 2. Méthode de travail
+# - Phase courante : 1 (mise à jour par le propriétaire). Ne rien implémenter d'une phase ultérieure.
+# - Phases : 1 Fondations/thème/navigation/ModalSheet. 2 RuleEngine + Room + AccessibilityService. 3 Quêtes/XP/malus/modes de détox. 4 Coffre Instagram + Insights. 5 Sécurité (PIN, Mindful Edits, Santé Samsung).
+# - Phase 1 = UI + données factices uniquement (ni Room, ni DataStore, ni AccessibilityService).
+# - Une seule étape à la fois. Le projet doit compiler avant de rendre la main. Pas de refactor hors étape.
+# - Aucune nouvelle dépendance sans demande explicite. Si c'est ambigu, poser la question au lieu de deviner.
+# - Terminer chaque réponse par la liste des fichiers créés ou modifiés.
+# - Le moteur (engine) est développé en TDD : tests JUnit avant l'implémentation.
+#
+# ## 3. Stack et architecture
+# - Kotlin, Jetpack Compose, Material 3, Navigation Compose, ViewModel + StateFlow, Coroutines/Flow, Room, DataStore Preferences, version catalog.
+# - Monomodule :app, packages com.example.focuslock.{ui, domain, engine, data}.
+#   - ui : composables, ViewModels, thème (hub, tasks, rules, vault, insights, settings, overlay, components, theme).
+#   - domain : modèles immuables (BlockRule, QuestTask, FocusSession, SavedPost, AppCategory), interfaces de repositories, ForegroundAppDetector.
+#   - engine : RuleEngine, MalusCalculator, XpRewardEngine (Kotlin pur).
+#   - data : Room, DataStore, FocusAccessibilityService, UsageStatsTracker, BootReceiver, AppContainer (dans FocusLockApplication).
+# - Dépendances : ui → domain ← data ; engine ne dépend que de domain. Aucun import android.* dans domain et engine.
+# - Injection manuelle (AppContainer). Pas de Hilt ni Koin.
+# - Pas de WorkManager ni AlarmManager pour basculer des états à heure fixe : on dérive l'état à chaque événement.
+#
+# ## 4. Moteur de décision (« dériver, ne pas planifier »)
+# - BlockDecision = RuleEngine.evaluate(nowInstant, foregroundPackage, rules, tasks, todayUsageMap, securityState). Fonction pure, java.time.Clock injectable.
+# - Ordre d'évaluation, le premier match gagne :
+#   1. Liste blanche matérielle (Téléphone, urgences, SystemUI, clavier) ou appel en cours → ALLOW
+#   2. Déverrouillage d'urgence valide → ALLOW (avec rappel du temps restant)
+#   3. Session de focus active et package hors liste blanche de session → BLOCK(ACTIVE_FOCUS_SESSION)
+#   4. Dette de focus active → BLOCK(FOCUS_DEBT_PENALTY)
+#   5. Routine obligatoire active avec checklist incomplète → BLOCK(MORNING_ROUTINE)
+#   6. Pause sabbatique (now < pauseUntil) ou jour OFF de détox (DAYS.between(cycleStartDate, today) % cycleIntervalDays != 0) → BLOCK(SABBATICAL_OR_DETOX)
+#   7. Plage horaire interdite ou quota dépassé (réduit du % de malus) → BLOCK(SCHEDULE_OR_QUOTA)
+#   8. Sinon → ALLOW
+# - Chaque BLOCK écrit une entrée BlockAuditLogEntity (timestamp, package, triggerRuleId, reasonCode, explicationText).
+# - Tout verrouillage a un plafond de durée maximal (constante unique). La valeur n'est pas définie : la demander au propriétaire, ne pas l'inventer.
+# - Types de règles : SCHEDULE, DAILY_QUOTA, ALTERNATING_DETOX, SABBATICAL, ROUTINE. Le contrat d'apprentissage est une FocusSession (ACTIVE_LEARNING, DEEP_WORK, FOCUS_DEBT_MALUS).
+#
+# ## 5. Gamification
+# - Récompense : P1 +100 XP (+ maintien de la série), P2 +50 XP (+15 si 3 jours de suite), P3 +20 XP.
+# - Malus à l'échéance dépassée :
+#   - P1 : −50 XP, dette de focus de 30 min, −50 % des quotas de loisirs du jour.
+#   - P2 : −25 XP, dette de 15 min, −25 % des quotas.
+#   - P3 : −10 XP ; à 3 P3 en retard cumulées, dette de 15 min.
+# - Un malus n'est appliqué qu'une fois (penaltyApplied, idempotent).
+# - Crédit de récréation : possible seulement si 100 % des P1 échues du jour sont faites et qu'aucune dette n'est active. Il dépense de l'XP du jour (ex. 100 XP) pour une fenêtre contrôlée (ex. +15 min) qui se referme à la seconde près.
+# - Anti-triche : une tâche P1/P2 ne peut être ni supprimée ni repoussée à moins de 2 h de l'échéance sans Mindful Edits + PIN.
+# - Grades : le niveau découle de l'XP totale (Niveau 1 Novice → 5 Structuré → 10 Inébranlable).
+#
+# ## 6. Détection et blocage Android
+# - AccessibilityService événementiel. Pas de polling UsageStatsManager, pas de ForegroundService. Écouter uniquement TYPE_WINDOW_STATE_CHANGED, avec canRetrieveWindowContent="false".
+# - Séquence de blocage : performGlobalAction(GLOBAL_ACTION_HOME) PUIS fenêtre TYPE_ACCESSIBILITY_OVERLAY. SYSTEM_ALERT_WINDOW n'est pas le mécanisme principal.
+# - ComposeView dans l'overlay : fournir manuellement LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner (setViewTree…Owner).
+# - Inspecter toutes les windows, pas seulement la fenêtre active, pour neutraliser pop-up view et écran scindé Samsung (option blockFloatingWindows).
+# - Ignorer les packages : clavier (IME), com.android.systemui, com.sec.android.app.launcher.
+# - Chaque callback d'événement est enveloppé dans un try/catch global (un service qui plante à répétition est désactivé par Android).
+# - Détection derrière l'interface ForegroundAppDetector. Interroger AdvancedProtectionManager (Android 17) pour basculer sur un détecteur de secours (UsageStatsManager + overlay standard).
+# - Quotas mesurés via UsageStatsManager.
+# - Redémarrage (secureAfterRestart) : BroadcastReceiver sur ACTION_LOCKED_BOOT_COMPLETED et ACTION_BOOT_COMPLETED. L'état de verrouillage minimal est restauré dès la première activité du service. Il doit donc vivre dans le stockage protégé de l'appareil (device-protected storage), avec des composants directBootAware.
+# - Protection anti-désinstallation : pendant un verrou strict, renvoyer à l'accueil si l'écran « Infos sur l'application » de FocusLock ou l'écran des services d'accessibilité s'ouvre. Périmètre exact à trancher avec le propriétaire ; ne pas activer canRetrieveWindowContent sans son accord. DeviceAdminReceiver n'est qu'un test complémentaire.
+# - Fail-safe : liste blanche matérielle inaltérable (Téléphone, urgences, SMS, horloge/alarme). Un appel entrant retire l'overlay le temps de l'appel.
+# - Navigateurs : peuvent être inclus dans les règles pour bloquer Instagram/TikTok via le web.
+# - Santé système : 4 voyants (service d'accessibilité actif, UsageStats accordée, exemption de batterie, dernier heartbeat). Raccourci vers « Applications jamais en veille ».
+#
+# ## 7. Sécurité (priorité absolue : la menace, c'est l'utilisateur impulsif)
+# - Asymétrie : durcir une règle ou lancer un verrou est instantané ; assouplir, mettre en pause ou déverrouiller exige de la friction.
+# - Actions sensibles (modifier une règle active, baisser un quota, supprimer une tâche P1 engagée, désactiver un blocage) : JAMAIS de biométrie ni de code Android. Uniquement le PIN indépendant, après le sas Mindful Edits.
+# - Mindful Edits : compte à rebours incompressible, 10 s par défaut (configurable de 10 à 60 s), avant tout formulaire d'édition ou clavier PIN.
+# - PIN : PBKDF2 + sel aléatoire (pinHashPBKDF2, pinSalt). Jamais en clair, jamais loggé, comparaison en temps constant. HMAC-SHA256, au moins 600 000 itérations, sel de 16 octets.
+# - Brute-force : 3 essais consécutifs, puis délais exponentiels de 30 s, 2 min, 10 min, 30 min, persistés (failedPinAttempts, pinLockoutUntilTimestamp).
+# - Bris de glace : avec le PIN, suspension courte (5 ou 15 min, strictAutoRelockMinutes) puis reverrouillage automatique. Jamais d'annulation définitive. La session passe en BROKEN_BY_EMERGENCY.
+# - Sans l'option enableSchedulePause, aucun bouton « Pause » sur les règles en mode strict.
+# - Les délais de sécurité (lockout PIN, Mindful Edits, déverrouillage d'urgence) ne se fient pas à l'heure murale seule : s'appuyer sur SystemClock.elapsedRealtime() et détecter les changements d'heure.
+# - Manifest : android:allowBackup="false" ; android:exported="false" partout, sauf l'activité de partage (ACTION_SEND) et le service d'accessibilité.
+# - L'intent ACTION_SEND est une entrée non fiable : valider l'URL (https, hôte instagram.com) avant stockage, et ne jamais l'ouvrir automatiquement.
+#
+# ## 8. Persistance
+# - Room : RuleEntity, QuestTaskEntity, FocusSessionEntity, SavedContentEntity, BlockAuditLogEntity, AppMetadataEntity. Utiliser exactement les noms de champs de la section 9.3 du cahier.
+# - DataStore : pinHashPBKDF2, pinSalt, failedPinAttempts, pinLockoutUntilTimestamp, mindfulEditDelaySeconds, strictAutoRelockMinutes, emergencyUnlockUntilTimestamp, blockFloatingWindows, secureAfterRestart, totalXp, currentStreakDays, lastStreakEvalEpochDay, quotaMalusReductionPercent, lastServiceHeartbeat.
+# - Room : exportSchema = true, migrations écrites à la main, JAMAIS de fallbackToDestructiveMigration.
+# - SavedContentEntity garde thumbnailLocalPath et mediaLocalPath (nullables, vides en Option A) pour l'Option B future.
+#
+# ## 9. Coffre de contenu Instagram (Option A)
+# - intent-filter ACTION_SEND text/plain → feuille de capture rapide (ModalBottomSheet) : titre, tag (Sport, Langues, Business, À étudier), validation.
+# - Fiches avec statut (À voir, Consulté, Favori) et compteur d'utilisation ; filtre par tags + recherche texte.
+# - « Ouvrir le post » passe d'abord par le RuleEngine. Si autorisé, fenêtre temporaire (ex. 3 min max) pour ce post seul.
+#
+# ## 10. Design « Midnight Blue & Mint » (thème sombre unique, pas de dynamic color)
+# - Principe : plus le verrou est strict, plus l'UI est calme. Messages bienveillants, jamais culpabilisants.
+# - Tokens : Night Abyss #070B14 (fond Hub/overlay) · Deep Slate #0F172A (sheet, drawer, en-têtes) · Elevated Card #162038 (cartes) · Steel Line #283750 (bordures 1 dp) · Electric Azure #38BDF8→#60A5FA (anneau, XP, actifs) · Mint #6FE6C4→#34D399 (bouton Save, coches, Productive) · Soft Coral #F87171 (malus, P1 en retard, alertes) · Ink #F8FAFC / Muted #94A3B8.
+# - Polices (res/font) : Fraunces (titres, compte à rebours), Inter (UI, formulaires), IBM Plex Mono (XP, séries, tentatives, horaires, pavé PIN).
+# - Navigation : ModalNavigationDrawer à 6 sections (Hub, Quêtes & Tâches, Règles & Détox, Coffre de Contenu, Statistiques & Audit, Profil/Sécurité/Santé) + 4 écrans modaux (bottom sheet, overlay de verrouillage, clavier PIN + délai, capture Instagram).
+# - Cartes : fond #162038, rayon 18 dp, espacement 12 dp. Bouton « Enregistrer » : pilule pleine largeur 54 dp, dégradé menthe, texte #06281E.
+# - ModalBottomSheet : 80–85 % de la hauteur, fond #0F172A, scrim bleu-noir ~65 %, coins supérieurs 28–32 dp, bordure haute 1 dp #283750, drag handle 36×4 dp, en-tête fixe (bouton rond 36 dp, titre centré, action à droite), corps en cartes défilantes.
+# - Overlay de verrouillage : fond #070B14 + halo radial qui respire (cycle sinusoïdal de 7 s) ; pilule d'état en haut ; anneau 180 dp avec temps restant en Fraunces 38 sp ; message personnalisable ; cause du blocage ; compteur de tentatives en mono (« 2× aujourd'hui | 23× au total ») ; checklist hors-écran intégrée (dot-check qui passe au menthe) ; note de fin de session optionnelle ; boutons « Fermer / Retour » et lien discret « Urgence / Bris de glace ».
+# - Clavier PIN : cadenas 44 dp dans un cercle ardoise, pin-dots, pavé 3×4 de touches rondes en IBM Plex Mono 19 sp.
+# - Insights : segmenté Jour | Semaine | Tendance, histogramme 24 h, apps classées Distracting/Neutral/Productive, carte « Distractions évitées », heatmap des séries, journal d'audit.
+# - Accessibilité : cibles tactiles ≥ 48 dp, tailles de texte en sp, animations désactivées si l'échelle d'animation système est à 0, edge-to-edge.
+#
+# ## 11. Conventions de code
+# - Identifiants en anglais ; textes d'interface en français dans strings.xml (pas de chaînes en dur).
+# - Composables sans état (state hoisting), un @Preview par composant, aucune logique métier dans les composables.
+# - Pas de GlobalScope, pas de `!!`, pas d'écriture synchrone sur le thread principal.
+# - Anciennes consignes à ignorer : palette corail/or, et tout lien entre SYSTEM_ALERT_WINDOW + ForegroundService et l'écran de blocage.
