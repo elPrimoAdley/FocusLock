@@ -77,8 +77,7 @@ fun HubScreen(
                                 Text("☰", color = colors.ink, style = typo.bodyPrimary)
                             }
                             Column {
-                                Text(uiState.greeting, style = typo.cardTitleSerif, color = colors.ink)
-                                Text(uiState.dateLabel, style = typo.bodySecondary, color = colors.mutedInk)
+                                Text(uiState.dateLabel, style = typo.bodyPrimary, color = colors.ink)
                             }
                         }
 
@@ -91,7 +90,7 @@ fun HubScreen(
                                 .padding(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             Text(
-                                text = "🔥 ${uiState.streakDays} JOURS",
+                                text = "🔥 ${uiState.streakDays}",
                                 style = typo.monoMetric,
                                 color = colors.mintClarityStart
                             )

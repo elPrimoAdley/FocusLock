@@ -25,6 +25,6 @@ sealed class Destination(
     )
 
     companion object {
-        val mainDrawerDestinations = listOf(Hub, Quests, Rules, Vault, Insights)
+        val mainDrawerDestinations get() = listOf(Hub, Quests, Rules, Vault, Insights)
     }
 }

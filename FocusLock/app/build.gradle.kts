@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.focuslock"
-        minSdk = 34
+        minSdk = 31 // Temporairement baissé de 34 à 31 pour test S10
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0-phase1"

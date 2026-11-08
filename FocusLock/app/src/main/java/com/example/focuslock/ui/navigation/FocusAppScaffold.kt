@@ -68,16 +68,13 @@ fun FocusAppScaffold() {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         // En-tête du Drawer avec Grade & Barre d'XP factices (1.6)
                         ElevatedCard {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
+                            Column {
                                 Text(
                                     text = "NIVEAU 5 • STRUCTURÉ",
                                     style = typo.monoTag,
                                     color = colors.electricAzureStart
                                 )
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
                                     text = "450 / 600 XP",
                                     style = typo.monoMetric,

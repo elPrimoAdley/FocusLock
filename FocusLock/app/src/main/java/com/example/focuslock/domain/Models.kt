@@ -13,8 +13,7 @@ enum class QuestPriority(val label: String, val xpReward: Int) {
 enum class FocusMode(val label: String) {
     FOCUS("Focus"),
     LANGUAGE("Étude Langue"),
-    READING("Lecture"),
-    SLEEP("Sommeil")
+    READING("Lecture")
 }
 
 data class QuestPreviewItem(
