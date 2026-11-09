@@ -308,6 +308,40 @@ class RuleEngineTest {
     }
 
     @Test
+    fun `3_14 morning routine checklist completed yesterday is automatically incomplete today without reset job`() {
+        val routineRule = BlockRule(
+            id = "routine-morning",
+            title = "Morning Routine",
+            ruleType = RuleType.ROUTINE,
+            targetPackages = setOf(instagram),
+            activeDaysBitmask = DaysBitmask.ALL_DAYS,
+            startTimeMinutes = 7 * 60,
+            endTimeMinutes = 7 * 60 + 30
+        )
+
+        // Sous-tâche cochée HIER (8 novembre à 07:10)
+        val completedYesterdayItem = QuestTask(
+            id = "t-yesterday",
+            title = "Boire 500ml d'eau",
+            isRoutineChecklistItem = true,
+            parentRoutineId = "routine-morning",
+            completedAt = fixedClock("2026-11-08T07:10:00").instant()
+        )
+
+        // Aujourd'hui (9 novembre à 07:15) -> completedAt < début du jour local -> Block(MORNING_ROUTINE) !
+        val clockToday715 = fixedClock("2026-11-09T07:15:00")
+        assertEquals(
+            BlockDecision.Block(BlockReason.MORNING_ROUTINE, "routine-morning", "Morning Routine"),
+            RuleEngine.evaluate(
+                clock = clockToday715,
+                foregroundPackage = instagram,
+                rules = listOf(routineRule),
+                tasks = listOf(completedYesterdayItem)
+            )
+        )
+    }
+
+    @Test
     fun `2_7 morning routine respects injected ZoneId on DST transition day`() {
         val parisZone = ZoneId.of("Europe/Paris")
         // Dimanche 25 octobre 2026 : passage à l'heure d'hiver en Europe

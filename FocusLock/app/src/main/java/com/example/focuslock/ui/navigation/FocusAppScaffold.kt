@@ -196,10 +196,13 @@ private fun FocusNavHost(
             )
         }
         composable(Destination.Quests.route) {
-            val questsViewModel = viewModel<com.example.focuslock.ui.quests.QuestsViewModel>(
+            val questsViewModel: com.example.focuslock.ui.quests.QuestsViewModel = viewModel(
                 factory = com.example.focuslock.ui.quests.QuestsViewModel.factory(container)
             )
-            QuestsScreen(viewModel = questsViewModel, onOpenDrawer = onOpenDrawer)
+            QuestsScreen(
+                viewModel = questsViewModel,
+                onOpenDrawer = onOpenDrawer
+            )
         }
         composable(Destination.Rules.route) {
             PlaceholderSectionScreen(destination = Destination.Rules, onOpenDrawer = onOpenDrawer)
