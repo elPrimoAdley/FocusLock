@@ -129,54 +129,149 @@ fun HubScreen(
                 }
             }
 
-            // ==================== BLOC A (2.1 - 2.3) : BOUTON TEMPORAIRE ACCESSIBILITÉ ====================
-            item {
-                val context = androidx.compose.ui.platform.LocalContext.current
-                var composeMode by androidx.compose.runtime.remember {
-                    androidx.compose.runtime.mutableStateOf(
-                        com.example.focuslock.data.accessibility.FocusAccessibilityService.useComposeOverlay
-                    )
-                }
+            // ==================== BLOC D (2.16 - 2.22) : OUTILS DEBUG PHASE 2 ====================
+            if (com.example.focuslock.BuildConfig.DEBUG) {
+                item {
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val appContainer = remember {
+                        (context.applicationContext as com.example.focuslock.FocusLockApplication).container
+                    }
+                    val lastDetectedPkg by appContainer.foregroundAppDetector.foregroundPackages
+                        .collectAsStateWithLifecycle(initialValue = "Aucun")
 
-                ElevatedCard {
-                    Text(
-                        text = "PHASE 2 • BLOC A (POC ACCESSIBILITÉ)",
-                        style = typo.monoTag,
-                        color = colors.electricAzureStart
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Cibles de test : YouTube, Instagram, TikTok, Chrome",
-                        style = typo.bodySecondary,
-                        color = colors.mutedInk
-                    )
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                    ElevatedCard {
                         Text(
-                            text = if (composeMode) "Mode 2.3 : ComposeView" else "Mode 2.2 : Vue Classique",
-                            style = typo.bodyPrimary,
-                            color = colors.ink
+                            text = "DEBUG PHASE 2 • INTÉGRATION BLOC D",
+                            style = typo.monoTag,
+                            color = colors.electricAzureStart
                         )
-                        FocusSwitch(
-                            checked = composeMode,
-                            onCheckedChange = {
-                                composeMode = it
-                                com.example.focuslock.data.accessibility.FocusAccessibilityService.useComposeOverlay = it
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Dernier package détecté (2.16) : $lastDetectedPkg",
+                            style = typo.monoMetric,
+                            color = colors.mintClarityStart
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        // Boutons Permissions Accessibilité & UsageStats (2.17)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(colors.deepSlate)
+                                    .border(1.dp, colors.steelLine, RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        context.startActivity(
+                                            android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                        )
+                                    }
+                                    .padding(vertical = 10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("1. Accessibilité", style = typo.bodySecondary, color = colors.ink)
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(colors.deepSlate)
+                                    .border(1.dp, colors.steelLine, RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        context.startActivity(
+                                            android.content.Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                                        )
+                                    }
+                                    .padding(vertical = 10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("2. UsageStats", style = typo.bodySecondary, color = colors.ink)
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(colors.deepSlate)
+                                    .border(1.dp, colors.electricAzureStart, RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        appContainer.usageStatsTracker.logTodayUsageToLogcat()
+                                        scope.launch {
+                                            snackbarHostState.showSnackbar("UsageStats du jour écrits dans Logcat")
+                                        }
+                                    }
+                                    .padding(vertical = 10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("Log Usage", style = typo.bodySecondary, color = colors.electricAzureStart)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Text(
+                            text = "Insérer un scénario de test (Cibles : YouTube, Instagram, TikTok, Chrome) :",
+                            style = typo.bodySecondary,
+                            color = colors.mutedInk
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        val scenarios = listOf(
+                            "Routine + Checklist (2.21)" to suspend {
+                                DebugScenarioSeeder.seedMorningRoutineScenario(appContainer)
+                            },
+                            "Session Focus 30m" to suspend {
+                                DebugScenarioSeeder.seedFocusSessionScenario(appContainer)
+                            },
+                            "Dette Focus Malus" to suspend {
+                                DebugScenarioSeeder.seedFocusDebtScenario(appContainer)
+                            },
+                            "Détox 1j/2 (OFF)" to suspend {
+                                DebugScenarioSeeder.seedSabbaticalDetoxScenario(appContainer)
+                            },
+                            "Quota Épuisé" to suspend {
+                                DebugScenarioSeeder.seedScheduleAndQuotaScenario(appContainer)
+                            },
+                            "Tout Effacer (Libre)" to suspend {
+                                DebugScenarioSeeder.clearAllScenarios(appContainer)
                             }
                         )
-                    }
-                    Spacer(modifier = Modifier.height(12.dp))
-                    MintPillButton(
-                        text = "Ouvrir les Réglages d'Accessibilité",
-                        onClick = {
-                            val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                            context.startActivity(intent)
+
+                        scenarios.chunked(2).forEach { pair ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                pair.forEach { (label, action) ->
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(colors.deepSlate)
+                                            .border(1.dp, colors.steelLine, RoundedCornerShape(10.dp))
+                                            .clickable {
+                                                scope.launch {
+                                                    action()
+                                                    snackbarHostState.showSnackbar("Scénario activé : $label")
+                                                }
+                                            }
+                                            .padding(vertical = 10.dp, horizontal = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = label,
+                                            style = typo.monoTag,
+                                            color = colors.ink,
+                                            maxLines = 1
+                                        )
+                                    }
+                                }
+                            }
                         }
-                    )
+                    }
                 }
             }
 
