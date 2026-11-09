@@ -10,6 +10,13 @@ import com.example.focuslock.domain.SessionStatus
 import kotlinx.coroutines.flow.Flow
 import java.time.Instant
 
+/**
+ * Exécuteur de transaction atomique (implémenté par RoomDatabase.withTransaction dans data).
+ */
+interface TransactionRunner {
+    suspend fun <R> runInTransaction(block: suspend () -> R): R
+}
+
 interface RuleRepository {
     fun observeAllRules(): Flow<List<BlockRule>>
     fun observeEnabledRules(): Flow<List<BlockRule>>
@@ -24,8 +31,12 @@ interface QuestTaskRepository {
     fun observeAllTasks(): Flow<List<QuestTask>>
     fun observeChecklistForRoutine(routineId: String): Flow<List<QuestTask>>
     suspend fun getAllTasks(): List<QuestTask>
+    suspend fun getTaskById(id: String): QuestTask?
+    suspend fun getTasksDueBetween(startOfDay: Instant, endOfDay: Instant): List<QuestTask>
+    suspend fun getOverdueUnpenalizedTasks(now: Instant): List<QuestTask>
     suspend fun upsertTask(task: QuestTask)
     suspend fun updateTaskCompletion(id: String, completedAt: Instant?)
+    suspend fun markTasksPenalized(ids: Set<String>)
     suspend fun deleteTaskById(id: String)
 }
 
@@ -33,6 +44,8 @@ interface FocusSessionRepository {
     fun observeAllSessions(): Flow<List<FocusSession>>
     fun observeRunningSessions(): Flow<List<FocusSession>>
     suspend fun getRunningSessions(): List<FocusSession>
+    suspend fun getActiveDebtSession(now: Instant): FocusSession?
+    suspend fun getTodayCompletedFocusMinutes(startOfDay: Instant, endOfDay: Instant): Int
     suspend fun upsertSession(session: FocusSession)
     suspend fun updateSessionStatus(
         id: String,

@@ -1,5 +1,7 @@
 package com.example.focuslock.data.repository
 
+import androidx.room.withTransaction
+import com.example.focuslock.data.local.FocusDatabase
 import com.example.focuslock.data.local.dao.AppMetadataDao
 import com.example.focuslock.data.local.dao.BlockAuditLogDao
 import com.example.focuslock.data.local.dao.FocusSessionDao
@@ -21,9 +23,18 @@ import com.example.focuslock.domain.repository.FocusSessionRepository
 import com.example.focuslock.domain.repository.QuestTaskRepository
 import com.example.focuslock.domain.repository.RuleRepository
 import com.example.focuslock.domain.repository.SavedContentRepository
+import com.example.focuslock.domain.repository.TransactionRunner
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.time.Instant
+
+class RoomTransactionRunner(
+    private val database: FocusDatabase
+) : TransactionRunner {
+    override suspend fun <R> runInTransaction(block: suspend () -> R): R {
+        return database.withTransaction { block() }
+    }
+}
 
 class RoomRuleRepository(private val dao: RuleDao) : RuleRepository {
     override fun observeAllRules(): Flow<List<BlockRule>> =
@@ -58,11 +69,27 @@ class RoomQuestTaskRepository(private val dao: QuestTaskDao) : QuestTaskReposito
     override suspend fun getAllTasks(): List<QuestTask> =
         dao.getAllTasks().map { it.toDomain() }
 
+    override suspend fun getTaskById(id: String): QuestTask? =
+        dao.getTaskById(id)?.toDomain()
+
+    override suspend fun getTasksDueBetween(startOfDay: Instant, endOfDay: Instant): List<QuestTask> =
+        dao.getTasksDueBetween(startOfDay.toEpochMilli(), endOfDay.toEpochMilli())
+            .map { it.toDomain() }
+
+    override suspend fun getOverdueUnpenalizedTasks(now: Instant): List<QuestTask> =
+        dao.getOverdueUnpenalizedTasks(now.toEpochMilli()).map { it.toDomain() }
+
     override suspend fun upsertTask(task: QuestTask) =
         dao.upsertTask(task.toEntity())
 
     override suspend fun updateTaskCompletion(id: String, completedAt: Instant?) =
         dao.updateTaskCompletion(id, completedAt?.toEpochMilli())
+
+    override suspend fun markTasksPenalized(ids: Set<String>) {
+        if (ids.isNotEmpty()) {
+            dao.markTasksPenalized(ids.toList())
+        }
+    }
 
     override suspend fun deleteTaskById(id: String) =
         dao.deleteTaskById(id)
@@ -77,6 +104,24 @@ class RoomFocusSessionRepository(private val dao: FocusSessionDao) : FocusSessio
 
     override suspend fun getRunningSessions(): List<FocusSession> =
         dao.getRunningSessions().map { it.toDomain() }
+
+    override suspend fun getActiveDebtSession(now: Instant): FocusSession? =
+        dao.getActiveDebtSession(now.toEpochMilli())?.toDomain()
+
+    override suspend fun getTodayCompletedFocusMinutes(
+        startOfDay: Instant,
+        endOfDay: Instant
+    ): Int {
+        val sessions = dao.getCompletedFocusSessionsBetween(
+            startOfDay.toEpochMilli(),
+            endOfDay.toEpochMilli()
+        )
+        return sessions.sumOf { entity ->
+            val endMillis = entity.actualEndedAt ?: entity.plannedEndAt
+            val durationMillis = (endMillis - entity.startedAt).coerceAtLeast(0L)
+            (durationMillis / 60_000L).toInt()
+        }
+    }
 
     override suspend fun upsertSession(session: FocusSession) =
         dao.upsertSession(session.toEntity())
