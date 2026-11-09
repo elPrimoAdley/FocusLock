@@ -1,0 +1,65 @@
+package com.example.focuslock.domain.repository
+
+import com.example.focuslock.domain.AppMetadata
+import com.example.focuslock.domain.BlockAuditLog
+import com.example.focuslock.domain.BlockRule
+import com.example.focuslock.domain.FocusSession
+import com.example.focuslock.domain.QuestTask
+import com.example.focuslock.domain.SavedPost
+import com.example.focuslock.domain.SessionStatus
+import kotlinx.coroutines.flow.Flow
+import java.time.Instant
+
+interface RuleRepository {
+    fun observeAllRules(): Flow<List<BlockRule>>
+    fun observeEnabledRules(): Flow<List<BlockRule>>
+    suspend fun getAllRules(): List<BlockRule>
+    suspend fun getRuleById(id: String): BlockRule?
+    suspend fun upsertRule(rule: BlockRule)
+    suspend fun setRuleEnabled(id: String, enabled: Boolean)
+    suspend fun deleteRuleById(id: String)
+}
+
+interface QuestTaskRepository {
+    fun observeAllTasks(): Flow<List<QuestTask>>
+    fun observeChecklistForRoutine(routineId: String): Flow<List<QuestTask>>
+    suspend fun getAllTasks(): List<QuestTask>
+    suspend fun upsertTask(task: QuestTask)
+    suspend fun updateTaskCompletion(id: String, completedAt: Instant?)
+    suspend fun deleteTaskById(id: String)
+}
+
+interface FocusSessionRepository {
+    fun observeAllSessions(): Flow<List<FocusSession>>
+    fun observeRunningSessions(): Flow<List<FocusSession>>
+    suspend fun getRunningSessions(): List<FocusSession>
+    suspend fun upsertSession(session: FocusSession)
+    suspend fun updateSessionStatus(
+        id: String,
+        status: SessionStatus,
+        actualEndedAt: Instant?,
+        summaryNote: String? = null
+    )
+}
+
+interface BlockAuditRepository {
+    suspend fun insertLog(log: BlockAuditLog): Long
+    fun observeRecentLogs(limit: Int = 100): Flow<List<BlockAuditLog>>
+    fun observeTodayCountForPackage(packageName: String, startOfDay: Instant): Flow<Int>
+    fun observeTotalCountForPackage(packageName: String): Flow<Int>
+    suspend fun getTodayCountForPackage(packageName: String, startOfDay: Instant): Int
+    suspend fun getTotalCountForPackage(packageName: String): Int
+    fun observeTotalDistractionsPreventedSince(startOfDay: Instant): Flow<Int>
+}
+
+interface AppMetadataRepository {
+    fun observeAllMetadata(): Flow<List<AppMetadata>>
+    suspend fun getMetadataForPackage(packageName: String): AppMetadata?
+    suspend fun upsertMetadata(metadata: AppMetadata)
+}
+
+interface SavedContentRepository {
+    fun observeAllSavedPosts(): Flow<List<SavedPost>>
+    suspend fun upsertSavedPost(post: SavedPost)
+    suspend fun deleteSavedPostById(id: String)
+}
