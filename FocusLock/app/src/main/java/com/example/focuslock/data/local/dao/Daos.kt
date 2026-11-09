@@ -47,11 +47,44 @@ interface QuestTaskDao {
     @Query("SELECT * FROM quest_tasks")
     suspend fun getAllTasks(): List<QuestTaskEntity>
 
+    @Query("SELECT * FROM quest_tasks WHERE id = :id LIMIT 1")
+    suspend fun getTaskById(id: String): QuestTaskEntity?
+
+    @Query(
+        """
+        SELECT * FROM quest_tasks 
+        WHERE isRoutineChecklistItem = 0 
+          AND dueAtTimestamp IS NOT NULL 
+          AND dueAtTimestamp >= :startOfDayMillis 
+          AND dueAtTimestamp < :endOfDayMillis
+        ORDER BY dueAtTimestamp ASC
+        """
+    )
+    suspend fun getTasksDueBetween(startOfDayMillis: Long, endOfDayMillis: Long): List<QuestTaskEntity>
+
+    @Query(
+        """
+        SELECT * FROM quest_tasks 
+        WHERE isRoutineChecklistItem = 0 
+          AND penaltyApplied = 0 
+          AND dueAtTimestamp IS NOT NULL 
+          AND (
+              (completedAtTimestamp IS NULL AND dueAtTimestamp < :nowMillis)
+              OR (completedAtTimestamp IS NOT NULL AND completedAtTimestamp > dueAtTimestamp)
+          )
+        ORDER BY dueAtTimestamp ASC
+        """
+    )
+    suspend fun getOverdueUnpenalizedTasks(nowMillis: Long): List<QuestTaskEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertTask(task: QuestTaskEntity)
 
     @Query("UPDATE quest_tasks SET completedAtTimestamp = :completedAtTimestamp WHERE id = :id")
     suspend fun updateTaskCompletion(id: String, completedAtTimestamp: Long?)
+
+    @Query("UPDATE quest_tasks SET penaltyApplied = 1 WHERE id IN (:ids)")
+    suspend fun markTasksPenalized(ids: List<String>)
 
     @Query("DELETE FROM quest_tasks WHERE id = :id")
     suspend fun deleteTaskById(id: String)
@@ -67,6 +100,32 @@ interface FocusSessionDao {
 
     @Query("SELECT * FROM focus_sessions WHERE status = 'RUNNING'")
     suspend fun getRunningSessions(): List<FocusSessionEntity>
+
+    @Query(
+        """
+        SELECT * FROM focus_sessions 
+        WHERE status = 'RUNNING' 
+          AND sessionType = 'FOCUS_DEBT_MALUS' 
+          AND plannedEndAt > :nowMillis 
+        ORDER BY plannedEndAt DESC 
+        LIMIT 1
+        """
+    )
+    suspend fun getActiveDebtSession(nowMillis: Long): FocusSessionEntity?
+
+    @Query(
+        """
+        SELECT * FROM focus_sessions 
+        WHERE status = 'COMPLETED' 
+          AND sessionType != 'FOCUS_DEBT_MALUS'
+          AND startedAt >= :startOfDayMillis 
+          AND startedAt < :endOfDayMillis
+        """
+    )
+    suspend fun getCompletedFocusSessionsBetween(
+        startOfDayMillis: Long,
+        endOfDayMillis: Long
+    ): List<FocusSessionEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertSession(session: FocusSessionEntity)
