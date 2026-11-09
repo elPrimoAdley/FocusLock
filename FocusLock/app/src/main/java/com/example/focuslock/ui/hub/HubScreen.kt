@@ -218,6 +218,9 @@ fun HubScreen(
                         Spacer(modifier = Modifier.height(8.dp))
 
                         val scenarios = listOf(
+                            "Tâche P1 Échue (3.9)" to suspend {
+                                DebugScenarioSeeder.seedOverdueP1TaskTriggerScenario(appContainer)
+                            },
                             "Routine + Checklist (2.21)" to suspend {
                                 DebugScenarioSeeder.seedMorningRoutineScenario(appContainer)
                             },

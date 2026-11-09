@@ -149,4 +149,24 @@ object DebugScenarioSeeder {
             )
         )
     }
+
+    /**
+     * Scénario 3.9 : Insère uniquement une tâche P1 non pénalisée dont l'échéance est dépassée
+     * depuis 1 minute (sans créer de session manuellement).
+     * L'ouverture d'Instagram déclenchera applyOverdue -> création de la dette -> FOCUS_DEBT_PENALTY.
+     */
+    suspend fun seedOverdueP1TaskTriggerScenario(container: AppContainer) = withContext(Dispatchers.IO) {
+        clearAllScenarios(container)
+        val now = container.clock.instant()
+        container.questTaskRepository.upsertTask(
+            QuestTask(
+                id = "debug-overdue-p1",
+                title = "Quête P1 dépassée (1h Espagnol)",
+                priority = QuestPriority.P1,
+                dueAt = now.minusSeconds(60L), // Échéance dépassée depuis 60 secondes
+                completedAt = null,
+                penaltyApplied = false
+            )
+        )
+    }
 }

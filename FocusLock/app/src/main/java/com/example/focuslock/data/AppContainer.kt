@@ -12,9 +12,14 @@ import com.example.focuslock.domain.repository.AppMetadataRepository
 import com.example.focuslock.domain.repository.BlockAuditRepository
 import com.example.focuslock.domain.repository.FocusSessionRepository
 import com.example.focuslock.domain.repository.QuestTaskRepository
+import com.example.focuslock.data.local.datastore.PreferencesGamificationStore
 import com.example.focuslock.domain.repository.RuleRepository
 import com.example.focuslock.domain.repository.SavedContentRepository
+import com.example.focuslock.domain.store.GamificationStore
+import com.example.focuslock.engine.GamificationCoordinator
 import com.example.focuslock.data.accessibility.AccessibilityForegroundAppDetector
+import com.example.focuslock.data.repository.RoomTransactionRunner
+import com.example.focuslock.domain.repository.TransactionRunner
 import com.example.focuslock.data.usage.UsageStatsTracker
 import java.time.Clock
 
@@ -24,6 +29,10 @@ class AppContainer(val appContext: Context) {
 
     val database: FocusDatabase by lazy {
         FocusDatabase.getInstance(appContext)
+    }
+
+    val transactionRunner: TransactionRunner by lazy {
+        RoomTransactionRunner(database)
     }
 
     val ruleRepository: RuleRepository by lazy {
@@ -48,6 +57,22 @@ class AppContainer(val appContext: Context) {
 
     val savedContentRepository: SavedContentRepository by lazy {
         RoomSavedContentRepository(database.savedContentDao())
+    }
+
+    // 3.7 DataStore de gamification
+    val gamificationStore: GamificationStore by lazy {
+        PreferencesGamificationStore.createDefault(appContext)
+    }
+
+    // 3.8 Coordinateur transactionnel XP & Malus
+    val gamificationCoordinator: GamificationCoordinator by lazy {
+        GamificationCoordinator(
+            zoneId = clock.zone,
+            questTaskRepository = questTaskRepository,
+            focusSessionRepository = focusSessionRepository,
+            gamificationStore = gamificationStore,
+            transactionRunner = transactionRunner
+        )
     }
 
     // 2.16 Détecteur de package au premier plan

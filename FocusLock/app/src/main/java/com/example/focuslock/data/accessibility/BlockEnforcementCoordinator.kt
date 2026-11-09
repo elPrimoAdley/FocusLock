@@ -15,6 +15,9 @@ import com.example.focuslock.domain.repository.BlockAuditRepository
 import com.example.focuslock.domain.repository.FocusSessionRepository
 import com.example.focuslock.domain.repository.QuestTaskRepository
 import com.example.focuslock.domain.repository.RuleRepository
+import com.example.focuslock.domain.store.GamificationState
+import com.example.focuslock.domain.store.GamificationStore
+import com.example.focuslock.engine.GamificationCoordinator
 import com.example.focuslock.engine.RuleEngine
 import com.example.focuslock.ui.overlay.OverlayUiModel
 import kotlinx.coroutines.CoroutineScope
@@ -29,6 +32,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.time.Clock
 import java.time.Duration
+import java.time.Instant
 import java.time.LocalDate
 import java.util.concurrent.ConcurrentHashMap
 
@@ -42,15 +46,17 @@ class BlockEnforcementCoordinator(
     private val questTaskRepository: QuestTaskRepository,
     private val focusSessionRepository: FocusSessionRepository,
     private val blockAuditRepository: BlockAuditRepository,
+    private val gamificationStore: GamificationStore,
+    private val gamificationCoordinator: GamificationCoordinator,
     private val onBlockTriggered: () -> Unit,
     private val onDismissOverlay: () -> Unit
 ) {
     companion object {
         private const val TAG = "BlockCoordinator"
-        private const val DEDUP_WINDOW_MILLIS = 2_000L // 2.19 : Anti-doublon de 2 secondes
+        private const val DEDUP_WINDOW_MILLIS = 2_000L
+        private const val OVERDUE_THROTTLE_MILLIS = 30_000L // 3.9 : Limité à 1 fois toutes les ~30 s
     }
 
-    // 2.18 : Règles, tâches et sessions gardées en mémoire via StateFlow
     private val rulesState: StateFlow<List<BlockRule>> = ruleRepository
         .observeEnabledRules()
         .stateIn(scope, SharingStarted.Eagerly, emptyList())
@@ -63,24 +69,53 @@ class BlockEnforcementCoordinator(
         .observeRunningSessions()
         .stateIn(scope, SharingStarted.Eagerly, emptyList())
 
+    private val gamificationState: StateFlow<GamificationState> = gamificationStore
+        .state
+        .stateIn(scope, SharingStarted.Eagerly, GamificationState())
+
+    // 3.9 : Prochaine échéance mise en cache en mémoire + horodatage du dernier check
+    @Volatile
+    private var cachedNextDueAt: Instant? = null
+
+    @Volatile
+    private var lastOverdueEvalMillis: Long = 0L
+
     private val lastAuditTimestampByPackage = ConcurrentHashMap<String, Long>()
 
     private val _overlayState = MutableStateFlow<OverlayUiModel?>(null)
     val overlayState: StateFlow<OverlayUiModel?> = _overlayState.asStateFlow()
 
     fun start() {
-        // 1. Écoute chaque changement de package au premier plan
+        // Maintient en cache mémoire la prochaine échéance non pénalisée
         scope.launch {
-            detector.foregroundPackages.collect { pkgName ->
-                evaluatePackage(pkgName, isReevaluation = false)
+            tasksState.collectLatest { tasks ->
+                cachedNextDueAt = tasks
+                    .asSequence()
+                    .filter { !it.isRoutineChecklistItem && !it.penaltyApplied && it.completedAt == null }
+                    .mapNotNull { it.dueAt }
+                    .minOrNull()
+
+                // 3.9 : Après chaque modification de tâche, vérifie si une échéance est dépassée
+                val nextDue = cachedNextDueAt
+                val now = clock.instant()
+                if (nextDue != null && now.isAfter(nextDue)) {
+                    withContext(Dispatchers.IO) {
+                        gamificationCoordinator.applyOverdue(now)
+                    }
+                }
+
+                // 2.21 : Ré-évaluation automatique si l'overlay est affiché
+                val currentOverlay = _overlayState.value
+                if (currentOverlay != null) {
+                    evaluatePackage(currentOverlay.blockedPackageName, isReevaluation = true)
+                }
             }
         }
 
-        // 2. 2.21 : Ré-évalue automatiquement quand les tâches/règles/sessions changent pendant que l'overlay est affiché
+        // Écoute les changements d'application au premier plan
         scope.launch {
-            tasksState.collectLatest {
-                val currentOverlay = _overlayState.value ?: return@collectLatest
-                evaluatePackage(currentOverlay.blockedPackageName, isReevaluation = true)
+            detector.foregroundPackages.collect { pkgName ->
+                evaluatePackage(pkgName, isReevaluation = false)
             }
         }
     }
@@ -97,12 +132,32 @@ class BlockEnforcementCoordinator(
     }
 
     private suspend fun evaluatePackage(pkgName: String, isReevaluation: Boolean) {
+        val now = clock.instant()
+        val nowMillis = now.toEpochMilli()
+
+        // 3.9 : Vérifie si la prochaine échéance en cache est dépassée ET respecte le throttle de 30 s
+        val nextDue = cachedNextDueAt
+        val isDueReached = nextDue != null && now.isAfter(nextDue)
+        val isThrottleElapsed = (nowMillis - lastOverdueEvalMillis) >= OVERDUE_THROTTLE_MILLIS
+
+        val sessions = if (isDueReached || (nextDue != null && isThrottleElapsed)) {
+            lastOverdueEvalMillis = nowMillis
+            withContext(Dispatchers.IO) {
+                gamificationCoordinator.applyOverdue(now)
+                focusSessionRepository.getRunningSessions()
+            }
+        } else {
+            sessionsState.value
+        }
+
         val rules = rulesState.value
         val tasks = tasksState.value
-        val sessions = sessionsState.value
         val usageMap = withContext(Dispatchers.IO) {
             usageStatsTracker.getTodayUsageMinutes(forceRefresh = false)
         }
+        val securityState = SecurityState(
+            quotaMalusReductionPercent = gamificationState.value.quotaMalusReductionPercent
+        )
 
         val decision = RuleEngine.evaluate(
             clock = clock,
@@ -111,7 +166,7 @@ class BlockEnforcementCoordinator(
             tasks = tasks,
             sessions = sessions,
             todayUsageMinutes = usageMap,
-            securityState = SecurityState()
+            securityState = securityState
         )
 
         when (decision) {

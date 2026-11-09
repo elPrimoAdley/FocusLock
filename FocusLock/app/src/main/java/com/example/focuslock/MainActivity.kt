@@ -5,8 +5,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.lifecycle.lifecycleScope
 import com.example.focuslock.ui.navigation.FocusAppScaffold
 import com.example.focuslock.ui.theme.FocusLockTheme
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -22,6 +25,15 @@ class MainActivity : ComponentActivity() {
             FocusLockTheme {
                 FocusAppScaffold()
             }
+        }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // 3.9 : Déclencheur automatique au retour de l'application au premier plan
+        val container = (applicationContext as FocusLockApplication).container
+        lifecycleScope.launch(Dispatchers.IO) {
+            container.gamificationCoordinator.applyOverdue(container.clock.instant())
         }
     }
 }

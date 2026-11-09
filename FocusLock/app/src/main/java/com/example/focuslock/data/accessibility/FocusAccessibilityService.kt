@@ -64,6 +64,8 @@ class FocusAccessibilityService : AccessibilityService() {
                 questTaskRepository = container.questTaskRepository,
                 focusSessionRepository = container.focusSessionRepository,
                 blockAuditRepository = container.blockAuditRepository,
+                gamificationStore = container.gamificationStore,
+                gamificationCoordinator = container.gamificationCoordinator,
                 onBlockTriggered = {
                     performGlobalAction(GLOBAL_ACTION_HOME)
                     mainHandler.post { showOverlayIfNeeded() }
