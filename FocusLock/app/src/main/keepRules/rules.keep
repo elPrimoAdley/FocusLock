@@ -71,13 +71,11 @@
 # - AccessibilityService événementiel. Pas de polling UsageStatsManager, pas de ForegroundService. Écouter uniquement TYPE_WINDOW_STATE_CHANGED, avec canRetrieveWindowContent="false".
 # - Séquence de blocage : performGlobalAction(GLOBAL_ACTION_HOME) PUIS fenêtre TYPE_ACCESSIBILITY_OVERLAY. SYSTEM_ALERT_WINDOW n'est pas le mécanisme principal.
 # - ComposeView dans l'overlay : fournir manuellement LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner (setViewTree…Owner).
-# - Inspecter toutes les windows, pas seulement la fenêtre active, pour neutraliser pop-up view et écran scindé Samsung (option blockFloatingWindows).
-# - Ignorer les packages : clavier (IME), com.android.systemui, com.sec.android.app.launcher.
+# - Phases 1 à 4 : canRetrieveWindowContent="false". En Phase 5 (fenêtres flottantes, anti-désinstallation), passer à "true" + flagRetrieveInteractiveWindows. Ne lire que le package et le type des fenêtres ; ne jamais lire ni stocker le contenu des autres apps (seule exception possible : reconnaître l'écran « Infos sur l'application » de FocusLock dans Réglages, sur décision du propriétaire).
 # - Chaque callback d'événement est enveloppé dans un try/catch global (un service qui plante à répétition est désactivé par Android).
 # - Détection derrière l'interface ForegroundAppDetector. Interroger AdvancedProtectionManager (Android 17) pour basculer sur un détecteur de secours (UsageStatsManager + overlay standard).
 # - Quotas mesurés via UsageStatsManager.
 # - Redémarrage (secureAfterRestart) : BroadcastReceiver sur ACTION_LOCKED_BOOT_COMPLETED et ACTION_BOOT_COMPLETED. L'état de verrouillage minimal est restauré dès la première activité du service. Il doit donc vivre dans le stockage protégé de l'appareil (device-protected storage), avec des composants directBootAware.
-# - Protection anti-désinstallation : pendant un verrou strict, renvoyer à l'accueil si l'écran « Infos sur l'application » de FocusLock ou l'écran des services d'accessibilité s'ouvre. Périmètre exact à trancher avec le propriétaire ; ne pas activer canRetrieveWindowContent sans son accord. DeviceAdminReceiver n'est qu'un test complémentaire.
 # - Fail-safe : liste blanche matérielle inaltérable (Téléphone, urgences, SMS, horloge/alarme). Un appel entrant retire l'overlay le temps de l'appel.
 # - Navigateurs : peuvent être inclus dans les règles pour bloquer Instagram/TikTok via le web.
 # - Santé système : 4 voyants (service d'accessibilité actif, UsageStats accordée, exemption de batterie, dernier heartbeat). Raccourci vers « Applications jamais en veille ».

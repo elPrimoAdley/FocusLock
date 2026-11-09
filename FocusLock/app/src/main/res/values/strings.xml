@@ -1,3 +1,6 @@
 <resources>
     <string name="app_name">FocusLock</string>
+    <string name="accessibility_service_description">
+        Détecte uniquement l\'application au premier plan pour appliquer tes contrats de temps et afficher l\'écran de concentration. Aucune lecture du contenu de l\'écran.
+    </string>
 </resources>

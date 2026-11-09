@@ -15,6 +15,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -125,6 +126,57 @@ fun HubScreen(
                             color = colors.mutedInk
                         )
                     }
+                }
+            }
+
+            // ==================== BLOC A (2.1 - 2.3) : BOUTON TEMPORAIRE ACCESSIBILITÉ ====================
+            item {
+                val context = androidx.compose.ui.platform.LocalContext.current
+                var composeMode by androidx.compose.runtime.remember {
+                    androidx.compose.runtime.mutableStateOf(
+                        com.example.focuslock.data.accessibility.FocusAccessibilityService.useComposeOverlay
+                    )
+                }
+
+                ElevatedCard {
+                    Text(
+                        text = "PHASE 2 • BLOC A (POC ACCESSIBILITÉ)",
+                        style = typo.monoTag,
+                        color = colors.electricAzureStart
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Cibles de test : YouTube, Instagram, TikTok, Chrome",
+                        style = typo.bodySecondary,
+                        color = colors.mutedInk
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (composeMode) "Mode 2.3 : ComposeView" else "Mode 2.2 : Vue Classique",
+                            style = typo.bodyPrimary,
+                            color = colors.ink
+                        )
+                        FocusSwitch(
+                            checked = composeMode,
+                            onCheckedChange = {
+                                composeMode = it
+                                com.example.focuslock.data.accessibility.FocusAccessibilityService.useComposeOverlay = it
+                            }
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(12.dp))
+                    MintPillButton(
+                        text = "Ouvrir les Réglages d'Accessibilité",
+                        onClick = {
+                            val intent = android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                            context.startActivity(intent)
+                        }
+                    )
                 }
             }
 
