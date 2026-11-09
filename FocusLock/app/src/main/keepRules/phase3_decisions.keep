@@ -1,0 +1,32 @@
+# ==============================================================================
+# FocusLock — Phase 3 — Décisions et Contraintes (à appliquer à chaque réponse)
+# ==============================================================================
+#
+# ## Phase 3 — Décisions validées (modifiables par le propriétaire uniquement)
+# Ces décisions comblent des points que le cahier laisse ouverts. Les appliquer telles quelles. Si une étape semble les contredire, poser la question au lieu de choisir.
+#
+# ### Contraintes de la phase
+# - Seule nouvelle dépendance : DataStore Preferences. Les clés du PIN restent pour la Phase 5.
+# - Aucune migration Room : le schéma de la Phase 2 reste inchangé.
+# - Pas de WorkManager ni d'AlarmManager. Les échéances se détectent aux événements : retour de l'app au premier plan, modification de tâche, événements du service d'accessibilité (au plus une évaluation toutes les ~30 s).
+# - Le callback du service d'accessibilité ne fait jamais d'I/O bloquante.
+# - Tout calcul de temps utilise Clock + ZoneId injectés, jamais Instant.now().
+#
+# ### Décisions
+# - D1 Quotas : les coupes de quota du jour s'additionnent (P1 −50 %, P2 −25 %), plafonnées à 100 %, remises à zéro au changement de jour (clé DataStore quotaMalusEpochDay).
+# - D2 Dettes de focus : elles s'enchaînent en file (durées additionnées), sans jamais dépasser le plafond de verrouillage maximal.
+# - D3 XP : le total ne descend jamais sous 0. Une tâche terminée en retard rapporte 0 XP. Le malus ne s'applique qu'une fois (penaltyApplied).
+# - D4 Série : un jour est validé si toutes les P1 échues ce jour-là sont faites à temps (au moins une). Un jour sans P1 est neutre. Une P1 manquée remet la série à 0.
+# - D5 Bonus P2 : +15 XP sur chaque P2 faite à temps, à partir du 3e jour consécutif avec au moins une P2 réussie.
+# - D6 Niveaux : seuils quadratiques dans une seule constante. Grades nommés : Niveau 1 Novice, 5 Structuré, 10 Inébranlable. Les autres s'affichent « Niveau N » tant que le propriétaire n'a pas fourni les noms.
+# - D7 QuestTaskEntity : pas de catégorie, de durée estimée ni de toggle « lier un malus » (hors MVP). Le malus est toujours actif.
+# - D8 Routines : la checklist sert uniquement au déblocage. Aucun XP ni malus pour les lignes de checklist.
+# - D9 Hero Card : objectif du jour dans la clé DataStore dailyFocusGoalMinutes, défaut 120.
+# - D10 Friction : tant que la Phase 5 n'existe pas, assouplir ou désactiver une règle active, supprimer une tâche P1/P2 engagée ou repousser son échéance à moins de 2 h est REFUSÉ (fail-closed). Le contournement n'existe que si BuildConfig.DEBUG, et doit être absent de la release.
+# - D11 Crédit de récréation (étape 3.24, optionnelle) : disponible si au moins une P1 est échue aujourd'hui, toutes les P1 sont réussies et aucune dette n'est active. Coût : 100 XP du jour pour +15 min sur une app en quota, sans baisser le grade. Il ne lève que le blocage de quota.
+#
+# ### Conventions du moteur (à confirmer par le propriétaire)
+# - Le contrat d'apprentissage verrouille jusqu'à plannedEndAt, pas jusqu'à minuit.
+# - Plage horaire qui traverse minuit : le bitmask des jours désigne le jour où elle commence.
+# - Quota d'un groupe d'apps : pool partagé (somme des usages).
+# - Plafond de verrouillage maximal : valeur NON définie. La demander, ne pas l'inventer.

@@ -22,7 +22,7 @@
 # - Référentiel complet : docs/cahier-des-charges.md (V3.1). Si une règle ici contredit le cahier, le signaler au lieu de choisir.
 #
 # ## 2. Méthode de travail
-# - Phase courante : 1 (mise à jour par le propriétaire). Ne rien implémenter d'une phase ultérieure.
+# - Phase courante : 3 (Quêtes/XP/malus/modes de détox). Ne rien implémenter d'une phase ultérieure.
 # - Phases : 1 Fondations/thème/navigation/ModalSheet. 2 RuleEngine + Room + AccessibilityService. 3 Quêtes/XP/malus/modes de détox. 4 Coffre Instagram + Insights. 5 Sécurité (PIN, Mindful Edits, Santé Samsung).
 # - Phase 1 = UI + données factices uniquement (ni Room, ni DataStore, ni AccessibilityService).
 # - Une seule étape à la fois. Le projet doit compiler avant de rendre la main. Pas de refactor hors étape.

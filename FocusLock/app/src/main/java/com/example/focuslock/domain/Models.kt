@@ -5,10 +5,43 @@ import java.time.Instant
 
 // ==================== MODÈLES PHASE 1 (CONSERVÉS POUR L'UI) ====================
 
-enum class QuestPriority(val label: String, val dbCode: String, val xpReward: Int) {
-    P1("P1", "P1_CRITICAL", 100),
-    P2("P2", "P2_IMPORTANT", 50),
-    P3("P3", "P3_SECONDARY", 20);
+enum class QuestPriority(
+    val label: String,
+    val dbCode: String,
+    val xpReward: Int,
+    val xpPenalty: Int,
+    val focusDebtMinutes: Int,
+    val quotaReductionPercent: Int
+) {
+    // Section 5 : P1 (+100 XP | -50 XP, 30 min dette, -50 % quota)
+    P1(
+        label = "P1",
+        dbCode = "P1_CRITICAL",
+        xpReward = 100,
+        xpPenalty = 50,
+        focusDebtMinutes = 30,
+        quotaReductionPercent = 50
+    ),
+
+    // Section 5 : P2 (+50 XP | -25 XP, 15 min dette, -25 % quota)
+    P2(
+        label = "P2",
+        dbCode = "P2_IMPORTANT",
+        xpReward = 50,
+        xpPenalty = 25,
+        focusDebtMinutes = 15,
+        quotaReductionPercent = 25
+    ),
+
+    // Section 5 : P3 (+20 XP | -10 XP, 0 min individuelle / 15 min au 3e retard, 0 % quota)
+    P3(
+        label = "P3",
+        dbCode = "P3_SECONDARY",
+        xpReward = 20,
+        xpPenalty = 10,
+        focusDebtMinutes = 0,
+        quotaReductionPercent = 0
+    );
 
     companion object {
         fun fromDbCode(code: String): QuestPriority {
@@ -16,6 +49,8 @@ enum class QuestPriority(val label: String, val dbCode: String, val xpReward: In
         }
     }
 }
+
+typealias Priority = QuestPriority
 
 enum class FocusMode(val label: String) {
     FOCUS("Focus"),
