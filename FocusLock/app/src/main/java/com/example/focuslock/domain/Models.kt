@@ -162,6 +162,8 @@ data class SecurityState(
             "com.samsung.android.dialer",
             "com.google.android.dialer",
             "com.android.server.telecom",
+            "com.sec.android.app.clockpackage", // Horloge Samsung (2.22)
+            "com.google.android.deskclock",     // Horloge Google (2.22)
             "com.samsung.android.honeyboard",
             "com.google.android.inputmethod.latin"
         )

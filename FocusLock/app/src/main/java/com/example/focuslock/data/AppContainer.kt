@@ -14,6 +14,8 @@ import com.example.focuslock.domain.repository.FocusSessionRepository
 import com.example.focuslock.domain.repository.QuestTaskRepository
 import com.example.focuslock.domain.repository.RuleRepository
 import com.example.focuslock.domain.repository.SavedContentRepository
+import com.example.focuslock.data.accessibility.AccessibilityForegroundAppDetector
+import com.example.focuslock.data.usage.UsageStatsTracker
 import java.time.Clock
 
 class AppContainer(val appContext: Context) {
@@ -46,5 +48,15 @@ class AppContainer(val appContext: Context) {
 
     val savedContentRepository: SavedContentRepository by lazy {
         RoomSavedContentRepository(database.savedContentDao())
+    }
+
+    // 2.16 Détecteur de package au premier plan
+    val foregroundAppDetector: AccessibilityForegroundAppDetector by lazy {
+        AccessibilityForegroundAppDetector()
+    }
+
+    // 2.17 Tracker UsageStats avec cache de 5 secondes
+    val usageStatsTracker: UsageStatsTracker by lazy {
+        UsageStatsTracker(appContext, clock)
     }
 }
