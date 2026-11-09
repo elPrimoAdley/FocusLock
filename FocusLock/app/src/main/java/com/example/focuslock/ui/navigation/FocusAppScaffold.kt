@@ -181,6 +181,9 @@ private fun FocusNavHost(
     navController: NavHostController,
     onOpenDrawer: () -> Unit
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val container = (context.applicationContext as com.example.focuslock.FocusLockApplication).container
+
     NavHost(
         navController = navController,
         startDestination = Destination.Hub.route
@@ -193,7 +196,10 @@ private fun FocusNavHost(
             )
         }
         composable(Destination.Quests.route) {
-            QuestsScreen(onOpenDrawer = onOpenDrawer)
+            val questsViewModel = viewModel<com.example.focuslock.ui.quests.QuestsViewModel>(
+                factory = com.example.focuslock.ui.quests.QuestsViewModel.factory(container)
+            )
+            QuestsScreen(viewModel = questsViewModel, onOpenDrawer = onOpenDrawer)
         }
         composable(Destination.Rules.route) {
             PlaceholderSectionScreen(destination = Destination.Rules, onOpenDrawer = onOpenDrawer)
