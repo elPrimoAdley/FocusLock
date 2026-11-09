@@ -11,6 +11,7 @@ import com.example.focuslock.domain.FocusSession
 import com.example.focuslock.domain.QuestTask
 import com.example.focuslock.domain.SecurityState
 import com.example.focuslock.domain.detector.ForegroundAppDetector
+import com.example.focuslock.domain.isCompletedToday
 import com.example.focuslock.domain.repository.BlockAuditRepository
 import com.example.focuslock.domain.repository.FocusSessionRepository
 import com.example.focuslock.domain.repository.QuestTaskRepository
@@ -122,7 +123,9 @@ class BlockEnforcementCoordinator(
 
     fun toggleRoutineChecklistItem(item: QuestTask) {
         scope.launch(Dispatchers.IO) {
-            val newInstant = if (item.completedAt == null) clock.instant() else null
+            val now = clock.instant()
+            val doneToday = item.isCompletedToday(now, clock.zone)
+            val newInstant = if (doneToday) null else now
             questTaskRepository.updateTaskCompletion(item.id, newInstant)
         }
     }
@@ -263,7 +266,8 @@ class BlockEnforcementCoordinator(
             totalDurationSeconds = totalSeconds,
             todayAttempts = todayCount,
             totalAttempts = totalCount,
-            routineChecklist = checklist
+            routineChecklist = checklist,
+            startOfToday = startOfDayInstant
         )
 
         _overlayState.value = uiModel

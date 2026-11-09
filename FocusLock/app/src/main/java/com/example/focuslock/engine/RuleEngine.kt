@@ -94,10 +94,7 @@ object RuleEngine {
                 val checklist = tasks.filter {
                     it.isRoutineChecklistItem && it.parentRoutineId == rule.id
                 }
-                val isChecklistIncomplete = checklist.isEmpty() || checklist.any { item ->
-                    item.completedAt == null || item.completedAt.isAfter(now)
-                }
-                if (isChecklistIncomplete) {
+                if (! com.example.focuslock.domain.isRoutineChecklistCompleteToday(checklist, now, clock.zone)) {
                     return BlockDecision.Block(
                         reason = BlockReason.MORNING_ROUTINE,
                         ruleId = rule.id,

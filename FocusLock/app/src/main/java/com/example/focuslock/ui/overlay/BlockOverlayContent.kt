@@ -48,7 +48,8 @@ data class OverlayUiModel(
     val totalDurationSeconds: Long = 3600L,
     val todayAttempts: Int = 1,
     val totalAttempts: Int = 1,
-    val routineChecklist: List<QuestTask> = emptyList()
+    val routineChecklist: List<QuestTask> = emptyList(),
+    val startOfToday: Instant = Instant.EPOCH
 )
 
 @Composable
@@ -253,7 +254,7 @@ fun BlockOverlayContent(
 
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             model.routineChecklist.forEach { item ->
-                                val isDone = item.completedAt != null
+                                val isDone = item.completedAt != null && !item.completedAt.isBefore(model.startOfToday)
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()

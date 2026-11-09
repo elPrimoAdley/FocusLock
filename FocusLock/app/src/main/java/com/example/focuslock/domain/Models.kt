@@ -2,6 +2,8 @@ package com.example.focuslock.domain
 
 import java.time.DayOfWeek
 import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
 
 // ==================== MODÈLES PHASE 1 (CONSERVÉS POUR L'UI) ====================
 
@@ -221,4 +223,26 @@ sealed interface BlockDecision {
         val ruleId: String? = null,
         val message: String? = null
     ) : BlockDecision
+}
+
+/**
+ * 3.14 : L'état « fait aujourd'hui » d'un élément de checklist se dérive :
+ * completedAtTimestamp >= début du jour local (00:00). Aucun job de remise à zéro requis.
+ */
+fun QuestTask.isCompletedToday(now: Instant, zoneId: ZoneId): Boolean {
+    val completed = completedAt ?: return false
+    val startOfToday = LocalDate.ofInstant(now, zoneId).atStartOfDay(zoneId).toInstant()
+    return !completed.isBefore(startOfToday) && !completed.isAfter(now)
+}
+
+/**
+ * 3.14 : Une checklist de routine est complète aujourd'hui si elle contient au moins un élément
+ * et que tous ses éléments ont été validés depuis le début du jour local.
+ */
+fun isRoutineChecklistCompleteToday(
+    checklist: List<QuestTask>,
+    now: Instant,
+    zoneId: ZoneId
+): Boolean {
+    return checklist.isNotEmpty() && checklist.all { it.isCompletedToday(now, zoneId) }
 }
