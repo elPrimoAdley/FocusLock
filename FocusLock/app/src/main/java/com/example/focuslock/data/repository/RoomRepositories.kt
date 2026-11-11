@@ -132,6 +132,9 @@ class RoomFocusSessionRepository(private val dao: FocusSessionDao) : FocusSessio
         actualEndedAt: Instant?,
         summaryNote: String?
     ) = dao.updateSessionStatus(id, status.name, actualEndedAt?.toEpochMilli(), summaryNote)
+
+    override suspend fun completeExpiredSessions(now: Instant): Int =
+        dao.completeExpiredSessions(now.toEpochMilli())
 }
 
 class RoomBlockAuditRepository(private val dao: BlockAuditLogDao) : BlockAuditRepository {

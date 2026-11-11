@@ -9,26 +9,37 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.focuslock.BuildConfig
+import com.example.focuslock.FocusLockApplication
 import com.example.focuslock.domain.FocusMode
-import com.example.focuslock.ui.components.*
+import com.example.focuslock.domain.SessionType
+import com.example.focuslock.domain.toSessionType
+import com.example.focuslock.ui.components.AppSelectorCard
+import com.example.focuslock.ui.components.ElevatedCard
+import com.example.focuslock.ui.components.FocusModalSheet
+import com.example.focuslock.ui.components.MintPillButton
+import com.example.focuslock.ui.components.PriorityBadge
+import com.example.focuslock.ui.components.StatusChip
 import com.example.focuslock.ui.theme.FocusTheme
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import java.time.Duration
 
 @Composable
 fun HubScreen(
@@ -40,6 +51,15 @@ fun HubScreen(
     val typo = FocusTheme.typography
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    var showStartFocusSheet by remember { mutableStateOf(false) }
+    var validationNoteText by remember { mutableStateOf("") }
+
+    LaunchedEffect(viewModel) {
+        viewModel.events.collectLatest { message ->
+            snackbarHostState.showSnackbar(message)
+        }
+    }
 
     Scaffold(
         containerColor = colors.nightAbyss,
@@ -54,8 +74,9 @@ fun HubScreen(
             contentPadding = PaddingValues(top = 14.dp, bottom = 36.dp),
             verticalArrangement = Arrangement.spacedBy(18.dp)
         ) {
-            // ==================== 1.7 HUB A : EN-TÊTE + HERO CARD ====================
+            // ==================== 3.23 EN-TÊTE RÉEL (SÉRIE, GRADE & XP) ====================
             item {
+                val lp = uiState.levelProgress
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -78,11 +99,11 @@ fun HubScreen(
                                 Text("☰", color = colors.ink, style = typo.bodyPrimary)
                             }
                             Column {
-                                Text(uiState.dateLabel, style = typo.bodyPrimary, color = colors.ink)
+                                Text(uiState.greeting, style = typo.cardTitleSerif, color = colors.ink)
+                                Text(uiState.dateLabel, style = typo.bodySecondary, color = colors.mutedInk)
                             }
                         }
 
-                        // Badge de Série (Focus Streak)
                         Box(
                             modifier = Modifier
                                 .clip(CircleShape)
@@ -91,20 +112,23 @@ fun HubScreen(
                                 .padding(horizontal = 12.dp, vertical = 6.dp)
                         ) {
                             Text(
-                                text = "🔥 ${uiState.streakDays}",
+                                text = "🔥 ${uiState.streakDays} JOURS",
                                 style = typo.monoMetric,
                                 color = colors.mintClarityStart
                             )
                         }
                     }
 
-                    // Jauge compacte Niveau / XP
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Text(uiState.levelLabel, style = typo.monoTag, color = colors.electricAzureStart)
+                        Text(
+                            text = "Niv. ${lp.level} • ${lp.gradeName}",
+                            style = typo.monoTag,
+                            color = colors.electricAzureStart
+                        )
                         Box(
                             modifier = Modifier
                                 .weight(1f)
@@ -112,16 +136,19 @@ fun HubScreen(
                                 .clip(CircleShape)
                                 .background(colors.deepSlate)
                         ) {
-                            val xpRatio = (uiState.currentXp.toFloat() / uiState.nextLevelXp).coerceIn(0f, 1f)
                             Box(
                                 modifier = Modifier
-                                    .fillMaxWidth(xpRatio)
+                                    .fillMaxWidth(lp.progressRatio.coerceIn(0.03f, 1f))
                                     .fillMaxHeight()
                                     .background(colors.electricAzureGradient)
                             )
                         }
                         Text(
-                            text = "${uiState.currentXp}/${uiState.nextLevelXp} XP",
+                            text = if (lp.nextLevelMinXp != null) {
+                                "${lp.totalXp}/${lp.nextLevelMinXp} XP"
+                            } else {
+                                "${lp.totalXp} XP"
+                            },
                             style = typo.monoTag,
                             color = colors.mutedInk
                         )
@@ -129,158 +156,10 @@ fun HubScreen(
                 }
             }
 
-            // ==================== BLOC D (2.16 - 2.22) : OUTILS DEBUG PHASE 2 ====================
-            if (com.example.focuslock.BuildConfig.DEBUG) {
-                item {
-                    val context = androidx.compose.ui.platform.LocalContext.current
-                    val appContainer = remember {
-                        (context.applicationContext as com.example.focuslock.FocusLockApplication).container
-                    }
-                    val lastDetectedPkg by appContainer.foregroundAppDetector.foregroundPackages
-                        .collectAsStateWithLifecycle(initialValue = "Aucun")
-
-                    ElevatedCard {
-                        Text(
-                            text = "DEBUG PHASE 2 • INTÉGRATION BLOC D",
-                            style = typo.monoTag,
-                            color = colors.electricAzureStart
-                        )
-                        Spacer(modifier = Modifier.height(4.dp))
-                        Text(
-                            text = "Dernier package détecté (2.16) : $lastDetectedPkg",
-                            style = typo.monoMetric,
-                            color = colors.mintClarityStart
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-
-                        // Boutons Permissions Accessibilité & UsageStats (2.17)
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(colors.deepSlate)
-                                    .border(1.dp, colors.steelLine, RoundedCornerShape(10.dp))
-                                    .clickable {
-                                        context.startActivity(
-                                            android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                                        )
-                                    }
-                                    .padding(vertical = 10.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("1. Accessibilité", style = typo.bodySecondary, color = colors.ink)
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(colors.deepSlate)
-                                    .border(1.dp, colors.steelLine, RoundedCornerShape(10.dp))
-                                    .clickable {
-                                        context.startActivity(
-                                            android.content.Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS)
-                                        )
-                                    }
-                                    .padding(vertical = 10.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("2. UsageStats", style = typo.bodySecondary, color = colors.ink)
-                            }
-                            Box(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(colors.deepSlate)
-                                    .border(1.dp, colors.electricAzureStart, RoundedCornerShape(10.dp))
-                                    .clickable {
-                                        appContainer.usageStatsTracker.logTodayUsageToLogcat()
-                                        scope.launch {
-                                            snackbarHostState.showSnackbar("UsageStats du jour écrits dans Logcat")
-                                        }
-                                    }
-                                    .padding(vertical = 10.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("Log Usage", style = typo.bodySecondary, color = colors.electricAzureStart)
-                            }
-                        }
-
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text(
-                            text = "Insérer un scénario de test (Cibles : YouTube, Instagram, TikTok, Chrome) :",
-                            style = typo.bodySecondary,
-                            color = colors.mutedInk
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        val scenarios = listOf(
-                            "Tâche P1 Échue (3.9)" to suspend {
-                                DebugScenarioSeeder.seedOverdueP1TaskTriggerScenario(appContainer)
-                            },
-                            "Routine + Checklist (2.21)" to suspend {
-                                DebugScenarioSeeder.seedMorningRoutineScenario(appContainer)
-                            },
-                            "Session Focus 30m" to suspend {
-                                DebugScenarioSeeder.seedFocusSessionScenario(appContainer)
-                            },
-                            "Dette Focus Malus" to suspend {
-                                DebugScenarioSeeder.seedFocusDebtScenario(appContainer)
-                            },
-                            "Détox 1j/2 (OFF)" to suspend {
-                                DebugScenarioSeeder.seedSabbaticalDetoxScenario(appContainer)
-                            },
-                            "Quota Épuisé" to suspend {
-                                DebugScenarioSeeder.seedScheduleAndQuotaScenario(appContainer)
-                            },
-                            "Tout Effacer (Libre)" to suspend {
-                                DebugScenarioSeeder.clearAllScenarios(appContainer)
-                            }
-                        )
-
-                        scenarios.chunked(2).forEach { pair ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                pair.forEach { (label, action) ->
-                                    Box(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(colors.deepSlate)
-                                            .border(1.dp, colors.steelLine, RoundedCornerShape(10.dp))
-                                            .clickable {
-                                                scope.launch {
-                                                    action()
-                                                    snackbarHostState.showSnackbar("Scénario activé : $label")
-                                                }
-                                            }
-                                            .padding(vertical = 10.dp, horizontal = 8.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = label,
-                                            style = typo.monoTag,
-                                            color = colors.ink,
-                                            maxLines = 1
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Hero Card : « 60 / 120 min » avec barre dégradée
+            // ==================== 3.23 HERO CARD : OBJECTIF DU JOUR ====================
             item {
-                val progress = (uiState.completedFocusMinutes.toFloat() / uiState.dailyGoalMinutes).coerceIn(0f, 1f)
+                val goal = uiState.dailyGoalMinutes.coerceAtLeast(1)
+                val progress = (uiState.completedFocusMinutes.toFloat() / goal.toFloat()).coerceIn(0f, 1f)
                 ElevatedCard {
                     Text(
                         text = "OBJECTIF DU JOUR",
@@ -322,8 +201,8 @@ fun HubScreen(
                 }
             }
 
-            // ==================== 1.9 HUB C (Partie 1) : BANDEAU MALUS ====================
-            if (uiState.activeMalus != null) {
+            // ==================== 3.23 BANDEAU MALUS RÉEL ====================
+            if (uiState.activeMalusBanner != null) {
                 item {
                     Box(
                         modifier = Modifier
@@ -340,12 +219,12 @@ fun HubScreen(
                             Text("⚠", style = typo.screenTitle, color = colors.softCoral)
                             Column {
                                 Text(
-                                    text = "MALUS AUTOMATIQUE ACTIF",
+                                    text = "PÉNALITÉ DISCIPLINAIRE ACTIVE",
                                     style = typo.monoTag,
                                     color = colors.softCoral
                                 )
                                 Text(
-                                    text = uiState.activeMalus ?: "",
+                                    text = uiState.activeMalusBanner ?: "",
                                     style = typo.bodySecondary,
                                     color = colors.ink
                                 )
@@ -355,20 +234,62 @@ fun HubScreen(
                 }
             }
 
-            // ==================== 1.8 HUB B : FOCUS RING & CONTRÔLES ====================
+            // ==================== 3.22 CARTE DE SYNTHÈSE DE FIN DE SESSION (OPTIONNELLE) ====================
+            val finishedSession = uiState.sessionAwaitingValidationNote
+            if (finishedSession != null) {
+                item {
+                    ElevatedCard {
+                        Text(
+                            text = "✓ CONTRAT D'APPRENTISSAGE TERMINÉ",
+                            style = typo.monoTag,
+                            color = colors.mintClarityStart
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = finishedSession.label,
+                            style = typo.cardTitleSerif,
+                            color = colors.ink
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = validationNoteText,
+                            onValueChange = { validationNoteText = it },
+                            placeholder = { Text("Note rapide (1–2 phrases sur ce que tu as étudié)") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                        MintPillButton(
+                            text = "Archiver la note de session",
+                            onClick = {
+                                viewModel.submitSessionValidationNote(finishedSession, validationNoteText)
+                                validationNoteText = ""
+                            }
+                        )
+                    }
+                }
+            }
+
+            // ==================== 3.21 & 3.22 FOCUS RING & CONTRAT DE TEMPS ====================
             item {
+                val activeSession = uiState.activeFocusSession
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // FocusRing en Canvas (gradient Electric Azure, bouts arrondis)
                     Box(
                         modifier = Modifier.size(230.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        val sweepAngle = (uiState.selectedDurationMinutes.toFloat() / 240f)
-                            .coerceIn(0.04f, 1f) * 360f
+                        val sweepAngle = if (activeSession != null) {
+                            val totalSec = Duration.between(activeSession.startedAt, activeSession.plannedEndAt)
+                                .seconds.coerceAtLeast(1L)
+                            (uiState.activeSessionRemainingSeconds.toFloat() / totalSec.toFloat())
+                                .coerceIn(0.03f, 1f) * 360f
+                        } else {
+                            (uiState.selectedDurationMinutes.toFloat() / 240f)
+                                .coerceIn(0.04f, 1f) * 360f
+                        }
 
                         Canvas(modifier = Modifier.fillMaxSize().padding(12.dp)) {
                             val strokePx = 16.dp.toPx()
@@ -390,37 +311,56 @@ fun HubScreen(
 
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Text(
-                                text = uiState.selectedMode.label.uppercase(),
+                                text = if (activeSession != null) {
+                                    "🔒 CONTRAT EN COURS"
+                                } else {
+                                    uiState.selectedMode.label.uppercase()
+                                },
                                 style = typo.monoTag,
-                                color = colors.electricAzureStart
+                                color = if (activeSession != null) colors.mintClarityStart else colors.electricAzureStart
                             )
                             Spacer(modifier = Modifier.height(4.dp))
                             Text(
-                                text = formatDurationLabel(uiState.selectedDurationMinutes),
-                                style = typo.timerDisplay,
+                                text = if (activeSession != null) {
+                                    formatCountdownSeconds(uiState.activeSessionRemainingSeconds)
+                                } else {
+                                    formatDurationLabel(uiState.selectedDurationMinutes)
+                                },
+                                style = typo.timerDisplay.copy(
+                                    fontSize = if (activeSession != null) 36.sp else 42.sp
+                                ),
                                 color = colors.ink
                             )
                             Spacer(modifier = Modifier.height(8.dp))
-                            // Boutons − / + (5 min à 4 h)
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                DurationStepButton(
-                                    symbol = "−",
-                                    onClick = {
-                                        val step = if (uiState.selectedDurationMinutes <= 30) -5 else -15
-                                        viewModel.adjustDuration(step)
-                                    }
+
+                            if (activeSession != null) {
+                                Text(
+                                    text = activeSession.label,
+                                    style = typo.bodySecondary,
+                                    color = colors.mutedInk,
+                                    maxLines = 1
                                 )
-                                Text("5m – 4h", style = typo.monoTag, color = colors.mutedInk)
-                                DurationStepButton(
-                                    symbol = "+",
-                                    onClick = {
-                                        val step = if (uiState.selectedDurationMinutes < 30) 5 else 15
-                                        viewModel.adjustDuration(step)
-                                    }
-                                )
+                            } else {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                ) {
+                                    DurationStepButton(
+                                        symbol = "−",
+                                        onClick = {
+                                            val step = if (uiState.selectedDurationMinutes <= 30) -5 else -15
+                                            viewModel.adjustDuration(step)
+                                        }
+                                    )
+                                    Text("5m – 4h", style = typo.monoTag, color = colors.mutedInk)
+                                    DurationStepButton(
+                                        symbol = "+",
+                                        onClick = {
+                                            val step = if (uiState.selectedDurationMinutes < 30) 5 else 15
+                                            viewModel.adjustDuration(step)
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -442,7 +382,9 @@ fun HubScreen(
                                         if (selected) colors.electricAzureStart else colors.steelLine,
                                         RoundedCornerShape(12.dp)
                                     )
-                                    .clickable { viewModel.selectMode(mode) }
+                                    .clickable(enabled = activeSession == null) {
+                                        viewModel.selectMode(mode)
+                                    }
                                     .padding(vertical = 10.dp, horizontal = 4.dp),
                                 contentAlignment = Alignment.Center
                             ) {
@@ -456,67 +398,336 @@ fun HubScreen(
                         }
                     }
 
-                    // Bouton Démarrer le Focus (affiche uniquement un Snackbar en Phase 1)
+                    // 3.21 & 3.22 : Bouton Démarrer (aucun bouton "Arrêter" en release)
                     MintPillButton(
-                        text = "Démarrer le Focus (${formatDurationLabel(uiState.selectedDurationMinutes)})",
-                        onClick = {
-                            scope.launch {
-                                snackbarHostState.showSnackbar(
-                                    "Contrat « ${uiState.selectedMode.label} » prêt pour ${uiState.selectedDurationMinutes} min (Phase 1)"
-                                )
-                            }
-                        }
+                        text = if (activeSession != null) {
+                            "Session verrouillée (${formatCountdownSeconds(uiState.activeSessionRemainingSeconds)})"
+                        } else {
+                            "Démarrer le Focus (${formatDurationLabel(uiState.selectedDurationMinutes)})"
+                        },
+                        enabled = activeSession == null,
+                        onClick = { showStartFocusSheet = true }
                     )
                 }
             }
 
-            // ==================== 1.9 HUB C (Partie 2) : QUÊTES P1 & SWITCH DEBUG ====================
+            // ==================== 3.23 APERÇU DES 3 QUÊTES P1 DU JOUR ====================
             item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("QUÊTES PRIORITAIRES (P1)", style = typo.monoTag, color = colors.mutedInk)
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text("Simuler Malus", style = typo.bodySecondary, color = colors.softCoral)
-                        FocusSwitch(
-                            checked = uiState.activeMalus != null,
-                            onCheckedChange = { viewModel.toggleDebugMalus(it) }
+                Text(
+                    text = "QUÊTES PRIORITAIRES DU JOUR (P1)",
+                    style = typo.monoTag,
+                    color = colors.mutedInk
+                )
+            }
+
+            if (uiState.topP1Quests.isEmpty()) {
+                item {
+                    ElevatedCard {
+                        Text(
+                            text = "Aucune quête P1 planifiée pour aujourd'hui. Engage une quête critique dans la section Quêtes & Tâches pour maintenir ta série et débloquer des Crédits de Récréation.",
+                            style = typo.bodySecondary,
+                            color = colors.mutedInk
                         )
+                    }
+                }
+            } else {
+                items(uiState.topP1Quests, key = { it.id }) { quest ->
+                    val isDone = quest.completedAt != null
+                    ElevatedCard(
+                        onClick = if (!isDone) {
+                            { viewModel.completeP1QuestFromHub(quest) }
+                        } else {
+                            null
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(
+                                modifier = Modifier.weight(1f).padding(end = 12.dp),
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                PriorityBadge(priority = quest.priority)
+                                Text(
+                                    text = quest.title,
+                                    style = typo.bodyPrimary,
+                                    color = if (isDone) colors.mutedInk else colors.ink
+                                )
+                            }
+                            StatusChip(
+                                isCompleted = isDone,
+                                onClick = if (!isDone) {
+                                    { viewModel.completeP1QuestFromHub(quest) }
+                                } else {
+                                    null
+                                }
+                            )
+                        }
                     }
                 }
             }
 
-            items(uiState.topQuests, key = { it.id }) { quest ->
-                ElevatedCard(onClick = { viewModel.toggleQuestCompletion(quest.id) }) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(
-                            modifier = Modifier.weight(1f).padding(end = 12.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            PriorityBadge(priority = quest.priority)
-                            Text(
-                                text = quest.title,
-                                style = typo.bodyPrimary,
-                                color = colors.ink
-                            )
-                        }
-                        StatusChip(
-                            isCompleted = quest.isCompleted,
-                            onClick = { viewModel.toggleQuestCompletion(quest.id) }
+            // Outils de test rapides (uniquement en build debug, totalement absents en release — 3.25)
+            if (BuildConfig.DEBUG) {
+                item {
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    val appContainer = remember {
+                        (context.applicationContext as FocusLockApplication).container
+                    }
+                    ElevatedCard {
+                        Text(
+                            text = "OUTILS DEBUG (ABSENTS EN RELEASE)",
+                            style = typo.monoTag,
+                            color = colors.electricAzureStart
                         )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(colors.deepSlate)
+                                    .border(1.dp, colors.steelLine, RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        context.startActivity(
+                                            android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                        )
+                                    }
+                                    .padding(vertical = 10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("Accessibilité", style = typo.bodySecondary, color = colors.ink)
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(colors.deepSlate)
+                                    .border(1.dp, colors.steelLine, RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        context.startActivity(
+                                            android.content.Intent(android.provider.Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                                        )
+                                    }
+                                    .padding(vertical = 10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("UsageStats", style = typo.bodySecondary, color = colors.ink)
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(colors.deepSlate)
+                                    .border(1.dp, colors.softCoral, RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        scope.launch {
+                                            DebugScenarioSeeder.clearAllScenarios(appContainer)
+                                            snackbarHostState.showSnackbar("Sessions et règles de test réinitialisées")
+                                        }
+                                    }
+                                    .padding(vertical = 10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("Reset Test", style = typo.bodySecondary, color = colors.softCoral)
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+
+    // 3.21 : Feuille modale de lancement d'un Contrat de Temps Focus
+    if (showStartFocusSheet) {
+        StartFocusModalSheet(
+            initialMode = uiState.selectedMode,
+            initialDurationMinutes = uiState.selectedDurationMinutes,
+            selectableApps = uiState.selectableApps,
+            appsLoader = viewModel.appsLoader,
+            onDismiss = { showStartFocusSheet = false },
+            onStartSession = { mode, label, durationMins, whitelist ->
+                viewModel.startFocusSession(
+                    mode = mode,
+                    customLabel = label,
+                    durationMinutes = durationMins,
+                    whitelistedPackages = whitelist,
+                    onStarted = { showStartFocusSheet = false }
+                )
+            },
+            onCycleCategory = { pkg, cat ->
+                viewModel.updateAppCategory(pkg, cat)
+            }
+        )
+    }
+}
+
+@Composable
+private fun StartFocusModalSheet(
+    initialMode: FocusMode,
+    initialDurationMinutes: Int,
+    selectableApps: List<com.example.focuslock.data.apps.SelectableAppInfo>,
+    appsLoader: com.example.focuslock.data.apps.InstalledAppsLoader,
+    onDismiss: () -> Unit,
+    onStartSession: (
+        mode: FocusMode,
+        label: String,
+        durationMinutes: Int,
+        whitelistedPackages: Set<String>
+    ) -> Unit,
+    onCycleCategory: (String, com.example.focuslock.domain.AppCategory) -> Unit
+) {
+    val colors = FocusTheme.colors
+    val typo = FocusTheme.typography
+
+    var mode by remember { mutableStateOf(initialMode) }
+    var durationMinutes by remember { mutableIntStateOf(initialDurationMinutes) }
+    var label by remember(initialMode) {
+        mutableStateOf(
+            when (initialMode) {
+                FocusMode.LANGUAGE -> "Étude Langue — Tablette"
+                FocusMode.READING -> "Lecture hors-écran"
+                FocusMode.SLEEP -> "Repos & Sommeil"
+                FocusMode.FOCUS -> "Travail Profond"
+            }
+        )
+    }
+    var whitelistedPackages by remember { mutableStateOf(emptySet<String>()) }
+
+    val mappedSessionType = mode.toSessionType()
+
+    FocusModalSheet(
+        title = "Sceller un Contrat de Temps",
+        saveButtonText = "Verrouiller pour ${formatDurationLabel(durationMinutes)}",
+        rightActionSymbol = "🔒",
+        onDismissRequest = onDismiss,
+        onSaveClick = {
+            onStartSession(mode, label, durationMinutes, whitelistedPackages)
+        }
+    ) {
+        // Carte 1 : Mode & Type de Session (DEEP_WORK vs ACTIVE_LEARNING)
+        ElevatedCard {
+            Text("MODE & NATURE DU CONTRAT", style = typo.monoTag, color = colors.mutedInk)
+            Spacer(modifier = Modifier.height(10.dp))
+            FocusMode.entries.chunked(2).forEach { rowModes ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    rowModes.forEach { itemMode ->
+                        val active = mode == itemMode
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (active) colors.deepSlate else colors.nightAbyss)
+                                .border(
+                                    1.dp,
+                                    if (active) colors.electricAzureStart else colors.steelLine,
+                                    RoundedCornerShape(12.dp)
+                                )
+                                .clickable {
+                                    mode = itemMode
+                                    label = itemMode.label
+                                }
+                                .padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = itemMode.label,
+                                style = typo.bodySecondary,
+                                color = if (active) colors.electricAzureStart else colors.mutedInk
+                            )
+                        }
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = when (mappedSessionType) {
+                    SessionType.ACTIVE_LEARNING -> "Type : ACTIVE_LEARNING (Apprentissage hors-écran avec note de fin)"
+                    SessionType.DEEP_WORK -> "Type : DEEP_WORK (Concentration profonde ininterrompue)"
+                    SessionType.FOCUS_DEBT_MALUS -> "Type : FOCUS_DEBT_MALUS"
+                },
+                style = typo.monoTag,
+                color = colors.mintClarityStart
+            )
+        }
+
+        // Carte 2 : Libellé & Durée du Contrat
+        ElevatedCard {
+            Text("LIBELLÉ & DURÉE", style = typo.monoTag, color = colors.mutedInk)
+            Spacer(modifier = Modifier.height(8.dp))
+            OutlinedTextField(
+                value = label,
+                onValueChange = { label = it },
+                label = { Text("Intitulé affiché sur l'écran de verrouillage") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = colors.electricAzureStart,
+                    unfocusedBorderColor = colors.steelLine,
+                    focusedTextColor = colors.ink,
+                    unfocusedTextColor = colors.ink
+                )
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                DurationStepButton(
+                    symbol = "−",
+                    onClick = {
+                        val step = if (durationMinutes <= 30) -5 else -15
+                        durationMinutes = (durationMinutes + step).coerceIn(5, 240)
+                    }
+                )
+                Text(
+                    text = formatDurationLabel(durationMinutes),
+                    style = typo.screenTitle,
+                    color = colors.ink
+                )
+                DurationStepButton(
+                    symbol = "+",
+                    onClick = {
+                        val step = if (durationMinutes < 30) 5 else 15
+                        durationMinutes = (durationMinutes + step).coerceIn(5, 240)
+                    }
+                )
+            }
+        }
+
+        // Carte 3 : Liste Blanche Sélective de Session (ex. Spotify, Dictionnaire)
+        ElevatedCard {
+            Text("LISTE BLANCHE DE LA SESSION (OPTIONNEL)", style = typo.monoTag, color = colors.mutedInk)
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = "Les applications cochées ci-dessous resteront accessibles pendant la session (le Téléphone et l'Horloge sont toujours autorisés).",
+                style = typo.bodySecondary,
+                color = colors.mutedInk
+            )
+        }
+
+        AppSelectorCard(
+            apps = selectableApps,
+            selectedPackages = whitelistedPackages,
+            appsLoader = appsLoader,
+            onTogglePackage = { pkg ->
+                whitelistedPackages = if (pkg in whitelistedPackages) {
+                    whitelistedPackages - pkg
+                } else {
+                    whitelistedPackages + pkg
+                }
+            },
+            onCycleCategory = onCycleCategory
+        )
     }
 }
 
@@ -546,5 +757,16 @@ private fun formatDurationLabel(minutes: Int): String {
         val h = minutes / 60
         val m = minutes % 60
         if (m == 0) "${h}h 00" else "${h}h ${m}m"
+    }
+}
+
+private fun formatCountdownSeconds(totalSeconds: Long): String {
+    val h = totalSeconds / 3600
+    val m = (totalSeconds % 3600) / 60
+    val s = totalSeconds % 60
+    return if (h > 0) {
+        String.format("%02d:%02d:%02d", h, m, s)
+    } else {
+        String.format("%02d:%02d", m, s)
     }
 }

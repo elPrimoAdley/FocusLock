@@ -143,6 +143,15 @@ interface FocusSessionDao {
         actualEndedAt: Long?,
         summaryNote: String? = null
     )
+
+    @Query(
+        """
+        UPDATE focus_sessions 
+        SET status = 'COMPLETED', actualEndedAt = plannedEndAt 
+        WHERE status = 'RUNNING' AND plannedEndAt <= :nowMillis
+        """
+    )
+    suspend fun completeExpiredSessions(nowMillis: Long): Int
 }
 
 @Dao

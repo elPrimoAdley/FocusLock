@@ -224,6 +224,19 @@ class GamificationCoordinatorTest {
                 )
             )
         }
+
+        override suspend fun completeExpiredSessions(now: Instant): Int {
+            var count = 0
+            val updated = sessionsFlow.value.toMutableMap()
+            updated.forEach { (id, session) ->
+                if (session.status == SessionStatus.RUNNING && !session.plannedEndAt.isAfter(now)) {
+                    updated[id] = session.copy(status = SessionStatus.COMPLETED, actualEndedAt = session.plannedEndAt)
+                    count++
+                }
+            }
+            sessionsFlow.value = updated
+            return count
+        }
     }
 
     private class FakeGamificationStore(

@@ -30,10 +30,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        // 3.9 : Déclencheur automatique au retour de l'application au premier plan
+        // 3.9 & 3.22 : Déclencheur automatique au retour de l'application au premier plan
         val container = (applicationContext as FocusLockApplication).container
         lifecycleScope.launch(Dispatchers.IO) {
-            container.gamificationCoordinator.applyOverdue(container.clock.instant())
+            val now = container.clock.instant()
+            container.focusSessionRepository.completeExpiredSessions(now)
+            container.gamificationCoordinator.applyOverdue(now)
         }
     }
 }

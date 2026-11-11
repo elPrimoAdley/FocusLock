@@ -154,6 +154,14 @@ class BlockEnforcementCoordinator(
             sessionsState.value
         }
 
+        // 3.22 : Si une session en mémoire vient d'expirer (plannedEndAt <= now), on la clôture idempotemment
+        val hasExpiredRunningSession = sessionsState.value.any { !now.isBefore(it.plannedEndAt) }
+        if (hasExpiredRunningSession) {
+            withContext(Dispatchers.IO) {
+                focusSessionRepository.completeExpiredSessions(now)
+            }
+        }
+
         val rules = rulesState.value
         val tasks = tasksState.value
         val usageMap = withContext(Dispatchers.IO) {
@@ -163,6 +171,14 @@ class BlockEnforcementCoordinator(
             quotaMalusReductionPercent = gamificationState.value.quotaMalusReductionPercent
         )
 
+        val gState = gamificationState.value
+        val activeRecreationCredit = gState.recreationCreditUntilTimestamp?.let { untilMillis ->
+            com.example.focuslock.domain.RecreationCredit(
+                packageName = null,
+                validUntil = Instant.ofEpochMilli(untilMillis)
+            )
+        }
+
         val decision = RuleEngine.evaluate(
             clock = clock,
             foregroundPackage = pkgName,
@@ -170,7 +186,8 @@ class BlockEnforcementCoordinator(
             tasks = tasks,
             sessions = sessions,
             todayUsageMinutes = usageMap,
-            securityState = securityState
+            securityState = securityState,
+            recreationCredit = activeRecreationCredit
         )
 
         when (decision) {

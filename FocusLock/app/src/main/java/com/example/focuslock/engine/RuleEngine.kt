@@ -27,7 +27,8 @@ object RuleEngine {
         tasks: List<QuestTask> = emptyList(),
         sessions: List<FocusSession> = emptyList(),
         todayUsageMinutes: Map<String, Int> = emptyMap(),
-        securityState: SecurityState = SecurityState()
+        securityState: SecurityState = SecurityState(),
+        recreationCredit: com.example.focuslock.domain.RecreationCredit? = null
     ): BlockDecision {
         val now: Instant = clock.instant()
         val zonedNow: ZonedDateTime = now.atZone(clock.zone)
@@ -150,28 +151,34 @@ object RuleEngine {
         }
 
         // ==================== NIVEAU 7B : QUOTAS JOURNALIERS (POOL PARTAGÉ + MALUS) ====================
-        val clampedMalusPercent = securityState.quotaMalusReductionPercent.coerceIn(0, 100)
-        for (rule in applicableRules.filter { it.ruleType == RuleType.DAILY_QUOTA }) {
-            if (!DaysBitmask.isDayActive(rule.activeDaysBitmask, zonedNow.dayOfWeek)) {
-                continue
-            }
-            val baseQuota = rule.dailyQuotaMinutes ?: continue
-            if (baseQuota < 0) continue
+        val isRecreationCreditValid = recreationCredit != null &&
+            now.isBefore(recreationCredit.validUntil) &&
+            (recreationCredit.packageName == null || recreationCredit.packageName == foregroundPackage)
 
-            // Arrondi documenté : troncature entière vers zéro (plancher entier)
-            val effectiveQuota = (baseQuota * (100 - clampedMalusPercent)) / 100
+        if (!isRecreationCreditValid) {
+            val clampedMalusPercent = securityState.quotaMalusReductionPercent.coerceIn(0, 100)
+            for (rule in applicableRules.filter { it.ruleType == RuleType.DAILY_QUOTA }) {
+                if (!DaysBitmask.isDayActive(rule.activeDaysBitmask, zonedNow.dayOfWeek)) {
+                    continue
+                }
+                val baseQuota = rule.dailyQuotaMinutes ?: continue
+                if (baseQuota < 0) continue
 
-            // Pool partagé : somme de l'usage du jour de toutes les apps du groupe
-            val sharedPoolUsage = rule.targetPackages.sumOf { pkg ->
-                (todayUsageMinutes[pkg] ?: 0).coerceAtLeast(0)
-            }
+                // Arrondi documenté : troncature entière vers zéro (plancher entier)
+                val effectiveQuota = (baseQuota * (100 - clampedMalusPercent)) / 100
 
-            if (sharedPoolUsage >= effectiveQuota) {
-                return BlockDecision.Block(
-                    reason = BlockReason.SCHEDULE_OR_QUOTA,
-                    ruleId = rule.id,
-                    message = rule.customBlockMessage ?: rule.title
-                )
+                // Pool partagé : somme de l'usage du jour de toutes les apps du groupe
+                val sharedPoolUsage = rule.targetPackages.sumOf { pkg ->
+                    (todayUsageMinutes[pkg] ?: 0).coerceAtLeast(0)
+                }
+
+                if (sharedPoolUsage >= effectiveQuota) {
+                    return BlockDecision.Block(
+                        reason = BlockReason.SCHEDULE_OR_QUOTA,
+                        ruleId = rule.id,
+                        message = rule.customBlockMessage ?: rule.title
+                    )
+                }
             }
         }
 

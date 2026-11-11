@@ -101,6 +101,7 @@ class GamificationCoordinator(
     }
 
     private suspend fun applyOverdueUnlocked(now: Instant): PenaltyPlan {
+        focusSessionRepository.completeExpiredSessions(now)
         val todayDate = now.atZone(zoneId).toLocalDate()
         val todayEpochDay = todayDate.toEpochDay()
         val storeSnapshot = gamificationStore.getSnapshot()
@@ -201,5 +202,61 @@ class GamificationCoordinator(
         }
 
         return penaltyPlan
+    }
+
+    /**
+     * 3.24 : Dépense 100 XP du jour (sans réduire totalXp ni le grade) pour accorder +15 min
+     * de crédit de récréation sur les applications en quota journalier.
+     */
+    suspend fun redeemRecreationCredit(now: Instant): RecreationEligibility = mutex.withLock {
+        focusSessionRepository.completeExpiredSessions(now)
+        val todayEpochDay = now.atZone(zoneId).toLocalDate().toEpochDay()
+        val storeState = gamificationStore.getSnapshot()
+        val tasks = questTaskRepository.getAllTasks()
+        val runningSessions = focusSessionRepository.getRunningSessions()
+
+        val spentToday = if (storeState.recreationSpentEpochDay == todayEpochDay) {
+            storeState.recreationSpentTodayXp
+        } else {
+            0
+        }
+        val currentCredit = storeState.recreationCreditUntilTimestamp?.let {
+            com.example.focuslock.domain.RecreationCredit(validUntil = Instant.ofEpochMilli(it))
+        }
+
+        val eligibility = RecreationCreditEvaluator.evaluateEligibility(
+            now = now,
+            zoneId = zoneId,
+            tasks = tasks,
+            runningSessions = runningSessions,
+            spentTodayXp = spentToday,
+            activeCredit = currentCredit
+        )
+
+        if (!eligibility.isEligible) {
+            return@withLock eligibility
+        }
+
+        val baseStart = if (currentCredit != null && now.isBefore(currentCredit.validUntil)) {
+            currentCredit.validUntil
+        } else {
+            now
+        }
+        val newCreditUntil = baseStart.plusSeconds(RecreationCreditEvaluator.DEFAULT_CREDIT_MINUTES * 60L)
+        val newSpentToday = spentToday + eligibility.costXp
+
+        gamificationStore.update { state ->
+            state.copy(
+                recreationSpentTodayXp = newSpentToday,
+                recreationSpentEpochDay = todayEpochDay,
+                recreationCreditUntilTimestamp = newCreditUntil.toEpochMilli()
+            )
+        }
+
+        eligibility.copy(
+            spentTodayXp = newSpentToday,
+            availableTodayXp = (eligibility.earnedTodayXp - newSpentToday).coerceAtLeast(0),
+            activeCreditUntil = newCreditUntil
+        )
     }
 }

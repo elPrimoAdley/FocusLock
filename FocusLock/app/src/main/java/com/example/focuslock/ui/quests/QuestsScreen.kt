@@ -87,7 +87,10 @@ fun QuestsScreen(
             ) {
                 // ==================== 3.13 PANNEAU XP, GRADE ET PÉNALITÉS ====================
                 item {
-                    XpAndPenaltiesPanel(uiState = uiState)
+                    XpAndPenaltiesPanel(
+                        uiState = uiState,
+                        onRedeemCredit = { viewModel.redeemRecreationCredit() }
+                    )
                 }
 
                 // Bandeau de contournement Debug (uniquement si BuildConfig.DEBUG && EditGuard a bloqué)
@@ -303,6 +306,9 @@ fun QuestsScreen(
     if (showRoutineSheet) {
         RoutineEditorModalSheet(
             existingRoutine = routineBeingEdited,
+            selectableApps = uiState.selectableApps,
+            appsLoader = viewModel.appsLoader,
+            onCycleCategory = { pkg, cat -> viewModel.updateAppCategory(pkg, cat) },
             onDismiss = { showRoutineSheet = false },
             onSave = { title, startMins, endMins, daysMask, pkgs, checklistTitles ->
                 viewModel.saveRoutineWithChecklist(
@@ -329,7 +335,10 @@ fun QuestsScreen(
 // ==================== 3.13 COMPOSANT : PANNEAU XP, GRADE ET PÉNALITÉS ====================
 
 @Composable
-private fun XpAndPenaltiesPanel(uiState: QuestsUiState) {
+private fun XpAndPenaltiesPanel(
+    uiState: QuestsUiState,
+    onRedeemCredit: () -> Unit
+) {
     val colors = FocusTheme.colors
     val typo = FocusTheme.typography
     val lp = uiState.levelProgress
@@ -461,26 +470,68 @@ private fun XpAndPenaltiesPanel(uiState: QuestsUiState) {
             Spacer(modifier = Modifier.height(10.dp))
         }
 
-        // 4. Placeholder Crédits de Récréation (3.13 -> sera activé en 3.24)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(10.dp))
-                .background(colors.deepSlate)
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = "Crédits de récréation (Mériter son temps)",
-                style = typo.bodySecondary,
-                color = colors.mutedInk
-            )
-            Text(
-                text = "Bientôt (3.24)",
-                style = typo.monoTag,
-                color = colors.mintClarityStart
-            )
+        // 4. Crédits de Récréation (3.24 — Mériter son temps : 100 XP du jour -> +15 min sur quotas)
+        val rec = uiState.recreationEligibility
+        if (rec != null) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(colors.deepSlate)
+                    .border(
+                        1.dp,
+                        if (rec.activeCreditUntil != null || rec.isEligible) colors.mintClarityStart else colors.steelLine,
+                        RoundedCornerShape(12.dp)
+                    )
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "CRÉDIT DE RÉCRÉATION (+15 MIN QUOTA)",
+                            style = typo.monoTag,
+                            color = colors.mintClarityStart
+                        )
+                        Text(
+                            text = "XP du jour disponible : ${rec.availableTodayXp} XP (Coût : ${rec.costXp} XP)",
+                            style = typo.bodySecondary,
+                            color = colors.ink
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(
+                                if (rec.isEligible) colors.mintClarityStart else colors.elevatedCard
+                            )
+                            .border(1.dp, colors.steelLine, CircleShape)
+                            .clickable { onRedeemCredit() }
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = "Débloquer +15m",
+                            style = typo.monoTag,
+                            color = if (rec.isEligible) colors.mintOnButton else colors.mutedInk
+                        )
+                    }
+                }
+
+                if (rec.activeCreditUntil != null) {
+                    val minsLeft = Duration.between(uiState.nowInstant, rec.activeCreditUntil)
+                        .seconds.coerceAtLeast(0L)
+                    Text(
+                        text = "✓ Crédit actif sur tes quotas : reste ${minsLeft / 60}m ${minsLeft % 60}s",
+                        style = typo.monoMetric.copy(fontSize = 11.sp),
+                        color = colors.mintClarityStart
+                    )
+                }
+            }
         }
     }
 }
@@ -1096,6 +1147,9 @@ private fun RoutineCard(
 @Composable
 private fun RoutineEditorModalSheet(
     existingRoutine: RoutineWithChecklistUi?,
+    selectableApps: List<com.example.focuslock.data.apps.SelectableAppInfo>,
+    appsLoader: com.example.focuslock.data.apps.InstalledAppsLoader,
+    onCycleCategory: (String, com.example.focuslock.domain.AppCategory) -> Unit,
     onDismiss: () -> Unit,
     onSave: (
         title: String,
@@ -1117,17 +1171,14 @@ private fun RoutineEditorModalSheet(
         mutableIntStateOf(existingRoutine?.rule?.activeDaysBitmask ?: DaysBitmask.ALL_DAYS)
     }
 
-    val presetDistractingApps = remember {
-        listOf(
-            "Instagram" to "com.instagram.android",
-            "TikTok" to "com.zhiliaoapp.musically",
-            "YouTube" to "com.google.android.youtube",
-            "Chrome" to "com.android.chrome"
-        )
-    }
     var selectedPackages by remember {
         mutableStateOf(
-            existingRoutine?.rule?.targetPackages ?: presetDistractingApps.map { it.second }.toSet()
+            existingRoutine?.rule?.targetPackages ?: setOf(
+                "com.instagram.android",
+                "com.zhiliaoapp.musically",
+                "com.google.android.youtube",
+                "com.android.chrome"
+            )
         )
     }
 
@@ -1307,34 +1358,15 @@ private fun RoutineEditorModalSheet(
             }
         }
 
-        // Carte 4 : Applications verrouillées tant que la checklist est incomplète
-        ElevatedCard {
-            Text("APPLICATIONS BLOQUÉES PAR LA ROUTINE", style = typo.monoTag, color = colors.mutedInk)
-            Spacer(modifier = Modifier.height(8.dp))
-            presetDistractingApps.forEach { (label, pkg) ->
-                val selected = pkg in selectedPackages
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .clip(RoundedCornerShape(10.dp))
-                        .background(colors.deepSlate)
-                        .clickable {
-                            selectedPackages = if (selected) selectedPackages - pkg else selectedPackages + pkg
-                        }
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(label, style = typo.bodyPrimary, color = colors.ink)
-                    Text(
-                        text = if (selected) "✓ Verrouillée" else "Ignorée",
-                        style = typo.monoTag,
-                        color = if (selected) colors.mintClarityStart else colors.mutedInk
-                    )
-                }
-            }
-        }
+        com.example.focuslock.ui.components.AppSelectorCard(
+            apps = selectableApps,
+            selectedPackages = selectedPackages,
+            appsLoader = appsLoader,
+            onTogglePackage = { pkg ->
+                selectedPackages = if (pkg in selectedPackages) selectedPackages - pkg else selectedPackages + pkg
+            },
+            onCycleCategory = onCycleCategory
+        )
     }
 
     val isStartClock = editingStartClock

@@ -57,7 +57,8 @@ typealias Priority = QuestPriority
 enum class FocusMode(val label: String) {
     FOCUS("Focus"),
     LANGUAGE("Étude Langue"),
-    READING("Lecture")
+    READING("Lecture"),
+    SLEEP("Sommeil")
 }
 
 data class QuestPreviewItem(
@@ -246,3 +247,22 @@ fun isRoutineChecklistCompleteToday(
 ): Boolean {
     return checklist.isNotEmpty() && checklist.all { it.isCompletedToday(now, zoneId) }
 }
+
+/**
+ * 3.21 : Correspondance entre les puces de mode du Hub et le type de session FocusSession.
+ * - Focus et Sommeil -> DEEP_WORK
+ * - Étude Langue et Lecture -> ACTIVE_LEARNING
+ */
+fun FocusMode.toSessionType(): SessionType = when (this) {
+    FocusMode.FOCUS, FocusMode.SLEEP -> SessionType.DEEP_WORK
+    FocusMode.LANGUAGE, FocusMode.READING -> SessionType.ACTIVE_LEARNING
+}
+
+/**
+ * 3.24 : Crédit de récréation temporaire levant uniquement un blocage de quota journalier (Niveau 7b),
+ * sans jamais lever les plages horaires (Niveau 7a) ni les niveaux 3 à 6.
+ */
+data class RecreationCredit(
+    val packageName: String? = null, // null = s'applique à toutes les apps en quota
+    val validUntil: Instant
+)

@@ -53,6 +53,7 @@ interface FocusSessionRepository {
         actualEndedAt: Instant?,
         summaryNote: String? = null
     )
+    suspend fun completeExpiredSessions(now: Instant): Int
 }
 
 interface BlockAuditRepository {

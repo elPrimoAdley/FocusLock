@@ -12,6 +12,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -19,6 +20,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.focuslock.domain.store.GamificationState
+import com.example.focuslock.engine.LevelCalculator
 import com.example.focuslock.ui.components.ComponentGalleryScreen
 import com.example.focuslock.ui.components.ElevatedCard
 import com.example.focuslock.ui.hub.HubScreen
@@ -29,6 +32,17 @@ import kotlinx.coroutines.launch
 
 @Composable
 fun FocusAppScaffold() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val container = remember {
+        (context.applicationContext as com.example.focuslock.FocusLockApplication).container
+    }
+    val gamificationState by container.gamificationStore.state.collectAsStateWithLifecycle(
+        initialValue = GamificationState()
+    )
+    val levelProgress = remember(gamificationState.totalXp) {
+        LevelCalculator.fromXp(gamificationState.totalXp)
+    }
+
     val colors = FocusTheme.colors
     val typo = FocusTheme.typography
     val navController = rememberNavController()
@@ -66,17 +80,21 @@ fun FocusAppScaffold() {
                 ) {
                     // Partie haute : En-tête Grade/XP + 5 items principaux
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        // En-tête du Drawer avec Grade & Barre d'XP factices (1.6)
+                        // En-tête du Drawer avec Grade & Barre d'XP réels
                         ElevatedCard {
                             Column {
                                 Text(
-                                    text = "NIVEAU 5 • STRUCTURÉ",
+                                    text = "NIV. ${levelProgress.level} • ${levelProgress.gradeName.uppercase()}",
                                     style = typo.monoTag,
                                     color = colors.electricAzureStart
                                 )
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "450 / 600 XP",
+                                    text = if (levelProgress.nextLevelMinXp != null) {
+                                        "${levelProgress.totalXp} / ${levelProgress.nextLevelMinXp} XP"
+                                    } else {
+                                        "${levelProgress.totalXp} XP"
+                                    },
                                     style = typo.monoMetric,
                                     color = colors.ink
                                 )
@@ -91,7 +109,7 @@ fun FocusAppScaffold() {
                             ) {
                                 Box(
                                     modifier = Modifier
-                                        .fillMaxWidth(0.75f)
+                                        .fillMaxWidth(levelProgress.progressRatio.coerceIn(0.03f, 1f))
                                         .fillMaxHeight()
                                         .background(colors.electricAzureGradient)
                                 )
@@ -189,7 +207,9 @@ private fun FocusNavHost(
         startDestination = Destination.Hub.route
     ) {
         composable(Destination.Hub.route) {
-            val hubViewModel: HubViewModel = viewModel()
+            val hubViewModel: com.example.focuslock.ui.hub.HubViewModel = viewModel(
+                factory = com.example.focuslock.ui.hub.HubViewModel.factory(container)
+            )
             HubScreen(
                 viewModel = hubViewModel,
                 onOpenDrawer = onOpenDrawer

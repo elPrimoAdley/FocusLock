@@ -11,7 +11,11 @@ data class GamificationState(
     val p3LateCounter: Int = 0,
     val dailyFocusGoalMinutes: Int = 120,
     val consecutiveP2Days: Int = 0,
-    val lastP2CompletionEpochDay: Long? = null
+    val lastP2CompletionEpochDay: Long? = null,
+    // 3.24 : Crédit de récréation (dépense d'XP du jour sans baisser totalXp / le grade)
+    val recreationSpentTodayXp: Int = 0,
+    val recreationSpentEpochDay: Long? = null,
+    val recreationCreditUntilTimestamp: Long? = null
 )
 
 interface GamificationStore {

@@ -33,6 +33,9 @@ class PreferencesGamificationStore(
         val KEY_DAILY_FOCUS_GOAL_MINUTES = intPreferencesKey("dailyFocusGoalMinutes")
         val KEY_CONSECUTIVE_P2_DAYS = intPreferencesKey("consecutiveP2Days")
         val KEY_LAST_P2_COMPLETION_EPOCH_DAY = longPreferencesKey("lastP2CompletionEpochDay")
+        val KEY_RECREATION_SPENT_TODAY_XP = intPreferencesKey("recreationSpentTodayXp")
+        val KEY_RECREATION_SPENT_EPOCH_DAY = longPreferencesKey("recreationSpentEpochDay")
+        val KEY_RECREATION_CREDIT_UNTIL_TIMESTAMP = longPreferencesKey("recreationCreditUntilTimestamp")
 
         @Volatile
         private var INSTANCE: DataStore<Preferences>? = null
@@ -91,6 +94,18 @@ class PreferencesGamificationStore(
             } else {
                 prefs.remove(KEY_LAST_P2_COMPLETION_EPOCH_DAY)
             }
+
+            prefs[KEY_RECREATION_SPENT_TODAY_XP] = next.recreationSpentTodayXp.coerceAtLeast(0)
+            if (next.recreationSpentEpochDay != null) {
+                prefs[KEY_RECREATION_SPENT_EPOCH_DAY] = next.recreationSpentEpochDay
+            } else {
+                prefs.remove(KEY_RECREATION_SPENT_EPOCH_DAY)
+            }
+            if (next.recreationCreditUntilTimestamp != null) {
+                prefs[KEY_RECREATION_CREDIT_UNTIL_TIMESTAMP] = next.recreationCreditUntilTimestamp
+            } else {
+                prefs.remove(KEY_RECREATION_CREDIT_UNTIL_TIMESTAMP)
+            }
         }
         return updatedState
     }
@@ -104,6 +119,9 @@ class PreferencesGamificationStore(
         p3LateCounter = this[KEY_P3_LATE_COUNTER] ?: 0,
         dailyFocusGoalMinutes = this[KEY_DAILY_FOCUS_GOAL_MINUTES] ?: 120,
         consecutiveP2Days = this[KEY_CONSECUTIVE_P2_DAYS] ?: 0,
-        lastP2CompletionEpochDay = this[KEY_LAST_P2_COMPLETION_EPOCH_DAY]
+        lastP2CompletionEpochDay = this[KEY_LAST_P2_COMPLETION_EPOCH_DAY],
+        recreationSpentTodayXp = this[KEY_RECREATION_SPENT_TODAY_XP] ?: 0,
+        recreationSpentEpochDay = this[KEY_RECREATION_SPENT_EPOCH_DAY],
+        recreationCreditUntilTimestamp = this[KEY_RECREATION_CREDIT_UNTIL_TIMESTAMP]
     )
 }

@@ -5,6 +5,10 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.focuslock.BuildConfig
 import com.example.focuslock.data.AppContainer
+import com.example.focuslock.data.apps.InstalledAppsLoader
+import com.example.focuslock.data.apps.SelectableAppInfo
+import com.example.focuslock.domain.AppCategory
+import com.example.focuslock.domain.AppMetadata
 import com.example.focuslock.domain.BlockRule
 import com.example.focuslock.domain.DaysBitmask
 import com.example.focuslock.domain.EditPermission
@@ -18,6 +22,7 @@ import com.example.focuslock.domain.RuleType
 import com.example.focuslock.domain.SessionType
 import com.example.focuslock.domain.isCompletedToday
 import com.example.focuslock.domain.isRoutineChecklistCompleteToday
+import com.example.focuslock.domain.repository.AppMetadataRepository
 import com.example.focuslock.domain.repository.FocusSessionRepository
 import com.example.focuslock.domain.repository.QuestTaskRepository
 import com.example.focuslock.domain.repository.RuleRepository
@@ -80,6 +85,8 @@ data class QuestsUiState(
     val filteredTasks: List<QuestTask> = emptyList(),
     val countsByFilter: Map<QuestFilter, Int> = emptyMap(),
     val routines: List<RoutineWithChecklistUi> = emptyList(),
+    val selectableApps: List<SelectableAppInfo> = emptyList(),
+    val recreationEligibility: com.example.focuslock.engine.RecreationEligibility? = null,
     val nowInstant: Instant = Instant.now(),
     val zoneId: ZoneId = ZoneId.systemDefault(),
     val pendingDebugBypass: PendingDebugBypassAction? = null
@@ -91,7 +98,9 @@ class QuestsViewModel(
     private val ruleRepository: RuleRepository,
     private val focusSessionRepository: FocusSessionRepository,
     private val gamificationStore: GamificationStore,
-    private val gamificationCoordinator: GamificationCoordinator
+    private val gamificationCoordinator: GamificationCoordinator,
+    private val appMetadataRepository: AppMetadataRepository,
+    val appsLoader: InstalledAppsLoader
 ) : ViewModel() {
 
     private val selectedTabFlow = MutableStateFlow(QuestsTab.QUESTS)
@@ -120,16 +129,19 @@ class QuestsViewModel(
         questTaskRepository.observeAllTasks(),
         ruleRepository.observeAllRules(),
         focusSessionRepository.observeRunningSessions(),
-        gamificationStore.state,
-        combine(selectedTabFlow, selectedFilterFlow, tickFlow, pendingBypassFlow) { tab, filter, now, bypass ->
-            Quadruple(tab, filter, now, bypass)
+        appMetadataRepository.observeAllMetadata(),
+        combine(gamificationStore.state, selectedTabFlow, selectedFilterFlow, tickFlow, pendingBypassFlow) { gamification, tab, filter, now, bypass ->
+            QuestsUiControls(gamification, tab, filter, now, bypass)
         }
-    ) { allTasks, allRules, runningSessions, gamification, uiControls ->
-        val (selectedTab, selectedFilter, now, pendingBypass) = uiControls
+    ) { allTasks, allRules, runningSessions, metadataList, uiControls ->
+        val (gamification, selectedTab, selectedFilter, now, pendingBypass) = uiControls
         val zone = clock.zone
         val today = now.atZone(zone).toLocalDate()
         val startOfToday = today.atStartOfDay(zone).toInstant()
         val endOfToday = today.plusDays(1).atStartOfDay(zone).toInstant()
+
+        val metadataMap = metadataList.associateBy { it.packageName }
+        val selectableApps = appsLoader.loadSelectableApps(metadataMap)
 
         // Séparation Quêtes standard vs Sous-tâches de checklist de routine
         val standaloneQuests = allTasks.filter { !it.isRoutineChecklistItem }
@@ -205,6 +217,23 @@ class QuestsViewModel(
             0
         }
 
+        val spentTodayXp = if (gamification.recreationSpentEpochDay == today.toEpochDay()) {
+            gamification.recreationSpentTodayXp
+        } else {
+            0
+        }
+        val currentCredit = gamification.recreationCreditUntilTimestamp?.let {
+            com.example.focuslock.domain.RecreationCredit(validUntil = Instant.ofEpochMilli(it))
+        }
+        val recreationEligibility = com.example.focuslock.engine.RecreationCreditEvaluator.evaluateEligibility(
+            now = now,
+            zoneId = zone,
+            tasks = allTasks,
+            runningSessions = runningSessions,
+            spentTodayXp = spentTodayXp,
+            activeCredit = currentCredit
+        )
+
         QuestsUiState(
             selectedTab = selectedTab,
             selectedFilter = selectedFilter,
@@ -217,6 +246,8 @@ class QuestsViewModel(
             filteredTasks = currentFiltered,
             countsByFilter = counts,
             routines = routinesUi,
+            selectableApps = selectableApps,
+            recreationEligibility = recreationEligibility,
             nowInstant = now,
             zoneId = zone,
             pendingDebugBypass = pendingBypass
@@ -229,6 +260,41 @@ class QuestsViewModel(
             zoneId = clock.zone
         )
     )
+
+    fun redeemRecreationCredit() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = gamificationCoordinator.redeemRecreationCredit(clock.instant())
+            if (result.activeCreditUntil != null && result.ineligibilityReason == null) {
+                _events.tryEmit("Crédit de récréation activé : +15 min sur tes quotas (−100 XP du jour, grade intact) !")
+            } else {
+                val reasonText = when (result.ineligibilityReason) {
+                    com.example.focuslock.engine.CreditIneligibilityReason.NO_P1_DUE_TODAY ->
+                        "Refusé : au moins une quête P1 doit être échue aujourd'hui."
+                    com.example.focuslock.engine.CreditIneligibilityReason.INCOMPLETE_OR_LATE_P1_TODAY ->
+                        "Refusé : termine d'abord 100 % de tes quêtes P1 du jour à temps."
+                    com.example.focuslock.engine.CreditIneligibilityReason.ACTIVE_FOCUS_DEBT ->
+                        "Refusé : purge d'abord ta Dette de Focus en cours."
+                    com.example.focuslock.engine.CreditIneligibilityReason.INSUFFICIENT_TODAY_XP ->
+                        "Refusé : il te faut au moins 100 XP gagnés aujourd'hui (disponible : ${result.availableTodayXp} XP)."
+                    null -> "Crédit non disponible."
+                }
+                _events.tryEmit(reasonText)
+            }
+        }
+    }
+
+    fun updateAppCategory(packageName: String, category: AppCategory) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val current = appMetadataRepository.getMetadataForPackage(packageName)
+            appMetadataRepository.upsertMetadata(
+                AppMetadata(
+                    packageName = packageName,
+                    category = category,
+                    isAlwaysWhitelisted = current?.isAlwaysWhitelisted ?: false
+                )
+            )
+        }
+    }
 
     fun selectTab(tab: QuestsTab) {
         selectedTabFlow.value = tab
@@ -532,6 +598,14 @@ class QuestsViewModel(
         else -> "Action protégée par le Mode Strict."
     }
 
+    private data class QuestsUiControls(
+        val gamification: GamificationState,
+        val tab: QuestsTab,
+        val filter: QuestFilter,
+        val now: Instant,
+        val pendingBypass: PendingDebugBypassAction?
+    )
+
     private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
     companion object {
@@ -545,7 +619,9 @@ class QuestsViewModel(
                         ruleRepository = container.ruleRepository,
                         focusSessionRepository = container.focusSessionRepository,
                         gamificationStore = container.gamificationStore,
-                        gamificationCoordinator = container.gamificationCoordinator
+                        gamificationCoordinator = container.gamificationCoordinator,
+                        appMetadataRepository = container.appMetadataRepository,
+                        appsLoader = container.installedAppsLoader
                     ) as T
                 }
             }
