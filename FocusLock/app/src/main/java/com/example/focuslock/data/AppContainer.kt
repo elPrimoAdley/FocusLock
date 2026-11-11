@@ -80,6 +80,11 @@ class AppContainer(val appContext: Context) {
         AccessibilityForegroundAppDetector()
     }
 
+    // 3.15 Chargeur d'applications lançables avec cache mémoire d'icônes
+    val installedAppsLoader: com.example.focuslock.data.apps.InstalledAppsLoader by lazy {
+        com.example.focuslock.data.apps.InstalledAppsLoader(appContext)
+    }
+
     // 2.17 Tracker UsageStats avec cache de 5 secondes
     val usageStatsTracker: UsageStatsTracker by lazy {
         UsageStatsTracker(appContext, clock)

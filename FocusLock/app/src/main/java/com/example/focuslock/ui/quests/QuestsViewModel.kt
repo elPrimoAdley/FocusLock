@@ -127,7 +127,7 @@ class QuestsViewModel(
     ) { allTasks, allRules, runningSessions, gamification, uiControls ->
         val (selectedTab, selectedFilter, now, pendingBypass) = uiControls
         val zone = clock.zone
-        val today = LocalDate.ofInstant(now, zone)
+        val today = now.atZone(zone).toLocalDate()
         val startOfToday = today.atStartOfDay(zone).toInstant()
         val endOfToday = today.plusDays(1).atStartOfDay(zone).toInstant()
 

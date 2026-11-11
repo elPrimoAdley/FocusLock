@@ -231,7 +231,7 @@ sealed interface BlockDecision {
  */
 fun QuestTask.isCompletedToday(now: Instant, zoneId: ZoneId): Boolean {
     val completed = completedAt ?: return false
-    val startOfToday = LocalDate.ofInstant(now, zoneId).atStartOfDay(zoneId).toInstant()
+    val startOfToday = now.atZone(zoneId).toLocalDate().atStartOfDay(zoneId).toInstant()
     return !completed.isBefore(startOfToday) && !completed.isAfter(now)
 }
 
