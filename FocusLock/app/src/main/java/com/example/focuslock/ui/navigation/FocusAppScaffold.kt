@@ -205,7 +205,17 @@ private fun FocusNavHost(
             )
         }
         composable(Destination.Rules.route) {
-            PlaceholderSectionScreen(destination = Destination.Rules, onOpenDrawer = onOpenDrawer)
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val container = remember {
+                (context.applicationContext as com.example.focuslock.FocusLockApplication).container
+            }
+            val rulesViewModel: com.example.focuslock.ui.rules.RulesViewModel = viewModel(
+                factory = com.example.focuslock.ui.rules.RulesViewModel.factory(container)
+            )
+            com.example.focuslock.ui.rules.RulesScreen(
+                viewModel = rulesViewModel,
+                onOpenDrawer = onOpenDrawer
+            )
         }
         composable(Destination.Vault.route) {
             PlaceholderSectionScreen(destination = Destination.Vault, onOpenDrawer = onOpenDrawer)

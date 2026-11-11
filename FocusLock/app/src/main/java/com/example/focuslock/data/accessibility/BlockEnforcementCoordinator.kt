@@ -14,6 +14,7 @@ import com.example.focuslock.domain.detector.ForegroundAppDetector
 import com.example.focuslock.domain.isCompletedToday
 import com.example.focuslock.domain.repository.BlockAuditRepository
 import com.example.focuslock.domain.repository.FocusSessionRepository
+import com.example.focuslock.engine.RuleFormatterAndDetoxCalculator
 import com.example.focuslock.domain.repository.QuestTaskRepository
 import com.example.focuslock.domain.repository.RuleRepository
 import com.example.focuslock.domain.store.GamificationState
@@ -225,12 +226,34 @@ class BlockEnforcementCoordinator(
         val matchedRule = rules.firstOrNull { it.id == decision.ruleId }
         val matchedSession = sessions.firstOrNull { it.id == decision.ruleId }
 
+        val todayLocalDate = LocalDate.now(clock)
+        val reopenDate: LocalDate? = if (matchedRule?.ruleType == com.example.focuslock.domain.RuleType.ALTERNATING_DETOX) {
+            RuleFormatterAndDetoxCalculator.nextReopenDate(matchedRule, todayLocalDate)
+        } else {
+            null
+        }
+
+        val statusPillOverride = when {
+            matchedRule?.ruleType == com.example.focuslock.domain.RuleType.SABBATICAL && matchedRule.pauseUntil != null ->
+                RuleFormatterAndDetoxCalculator.formatSabbaticalOverlayPill(
+                    matchedRule.pauseUntil,
+                    clock.zone
+                )
+            reopenDate != null && reopenDate.isAfter(todayLocalDate) ->
+                "PAUSE DÉTOX • VERROUILLÉ JUSQU'AU ${
+                    reopenDate.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                }"
+            else -> null
+        }
+
         val targetEnd = when {
             matchedSession != null -> matchedSession.plannedEndAt
             matchedRule?.pauseUntil != null -> matchedRule.pauseUntil
+            reopenDate != null && reopenDate.isAfter(todayLocalDate) ->
+                reopenDate.atStartOfDay(clock.zone).toInstant()
             matchedRule?.endTimeMinutes != null -> {
                 val endMins = matchedRule.endTimeMinutes
-                LocalDate.now(clock)
+                todayLocalDate
                     .atTime(endMins / 60, endMins % 60)
                     .atZone(clock.zone)
                     .toInstant()
@@ -262,6 +285,7 @@ class BlockEnforcementCoordinator(
             ruleOrSessionId = decision.ruleId,
             ruleTitle = matchedRule?.title ?: matchedSession?.label ?: decision.message ?: "Règle Active",
             customMessage = customMsg,
+            statusPillOverride = statusPillOverride,
             targetEndInstant = targetEnd,
             totalDurationSeconds = totalSeconds,
             todayAttempts = todayCount,

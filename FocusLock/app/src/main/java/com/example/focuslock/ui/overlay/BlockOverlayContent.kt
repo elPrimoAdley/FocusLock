@@ -44,6 +44,7 @@ data class OverlayUiModel(
     val ruleOrSessionId: String?,
     val ruleTitle: String,
     val customMessage: String,
+    val statusPillOverride: String? = null,
     val targetEndInstant: Instant? = null,
     val totalDurationSeconds: Long = 3600L,
     val todayAttempts: Int = 1,
@@ -132,7 +133,7 @@ fun BlockOverlayContent(
                         .padding(horizontal = 16.dp, vertical = 8.dp)
                 ) {
                     Text(
-                        text = statusBadgeLabelFor(model.reason),
+                        text = model.statusPillOverride ?: statusBadgeLabelFor(model.reason),
                         style = typo.monoTag,
                         color = statusColorFor(model.reason, colors)
                     )
