@@ -251,10 +251,30 @@ private fun FocusNavHost(
             )
         }
         composable(Destination.Insights.route) {
-            PlaceholderSectionScreen(destination = Destination.Insights, onOpenDrawer = onOpenDrawer)
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val container = remember {
+                (context.applicationContext as com.example.focuslock.FocusLockApplication).container
+            }
+            val insightsViewModel: com.example.focuslock.ui.insights.InsightsViewModel = viewModel(
+                factory = com.example.focuslock.ui.insights.InsightsViewModel.factory(container)
+            )
+            com.example.focuslock.ui.insights.InsightsScreen(
+                viewModel = insightsViewModel,
+                onOpenDrawer = onOpenDrawer
+            )
         }
         composable(Destination.ProfileSecurity.route) {
-            PlaceholderSectionScreen(destination = Destination.ProfileSecurity, onOpenDrawer = onOpenDrawer)
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val container = remember {
+                (context.applicationContext as com.example.focuslock.FocusLockApplication).container
+            }
+            val profileVm: com.example.focuslock.ui.settings.ProfileSecurityViewModel = viewModel(
+                factory = com.example.focuslock.ui.settings.ProfileSecurityViewModel.factory(container)
+            )
+            com.example.focuslock.ui.settings.ProfileSecurityScreen(
+                viewModel = profileVm,
+                onOpenDrawer = onOpenDrawer
+            )
         }
         composable(Destination.GalleryDebug.route) {
             Column(

@@ -17,6 +17,9 @@ data class FocusColors(
     val mintClarityEnd: Color = Color(0xFF34D399),
     val mintOnButton: Color = Color(0xFF06281E),
     val softCoral: Color = Color(0xFFF87171),
+    val distractingViolet: Color = Color(0xFFA78BFA), // Décision #21 : Catégorie Distracting
+    val neutralBlue: Color = Color(0xFF60A5FA),       // Décision #21 : Catégorie Neutral
+    val productiveMint: Color = Color(0xFF34D399),    // Décision #21 : Catégorie Productive
     val ink: Color = Color(0xFFF8FAFC),
     val mutedInk: Color = Color(0xFF94A3B8)
 ) {

@@ -93,6 +93,7 @@ class AppContainer(val appContext: Context) {
     // 4.8 Source de décision d'accès unique
     val accessDecisionEvaluator: com.example.focuslock.data.accessibility.AccessDecisionEvaluator by lazy {
         com.example.focuslock.data.accessibility.AccessDecisionEvaluator(
+            context = appContext,
             clock = clock,
             usageStatsTracker = usageStatsTracker,
             ruleRepository = ruleRepository,
@@ -100,6 +101,22 @@ class AppContainer(val appContext: Context) {
             focusSessionRepository = focusSessionRepository,
             gamificationStore = gamificationStore,
             gamificationCoordinator = gamificationCoordinator
+        )
+    }
+
+    val dailyUsageRepository: com.example.focuslock.domain.repository.DailyUsageRepository by lazy {
+        com.example.focuslock.data.repository.RoomDailyUsageRepository(database.dailyUsageDao())
+    }
+
+    val usageSnapshotter: com.example.focuslock.engine.usage.UsageSnapshotter by lazy {
+        com.example.focuslock.engine.usage.UsageSnapshotter(
+            zoneId = clock.zone,
+            gamificationStore = gamificationStore,
+            dailyUsageRepository = dailyUsageRepository,
+            pastDayUsageProvider = { date ->
+                usageStatsTracker.getDayAggregation(date, emptyMap(), forceRefresh = true)
+                    ?.durationMsByPackage
+            }
         )
     }
 }

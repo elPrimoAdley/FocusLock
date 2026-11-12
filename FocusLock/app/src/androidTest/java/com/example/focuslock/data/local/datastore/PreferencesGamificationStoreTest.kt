@@ -39,6 +39,7 @@ class PreferencesGamificationStoreTest {
         val expected = GamificationState(
             totalXp = 750,
             currentStreakDays = 9,
+            bestStreakDays = 9,
             lastStreakEvalEpochDay = 20767L,
             quotaMalusReductionPercent = 50,
             quotaMalusEpochDay = 20767L,

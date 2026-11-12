@@ -22,6 +22,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 class FocusAccessibilityService : AccessibilityService() {
 
@@ -81,17 +82,37 @@ class FocusAccessibilityService : AccessibilityService() {
         }
     }
 
+    @Volatile
+    private var lastHeartbeatMillis: Long = 0L
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         try {
-            if (event == null || event.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
+            if (event == null) return
+            val type = event.eventType
+            if (type != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED &&
+                type != AccessibilityEvent.TYPE_WINDOWS_CHANGED
+            ) {
                 return
             }
+
+            val app = applicationContext as FocusLockApplication
+            val container = app.container
+            val nowMillis = container.clock.millis()
+
+            if (nowMillis - lastHeartbeatMillis >= 30_000L) {
+                lastHeartbeatMillis = nowMillis
+                serviceScope?.launch(Dispatchers.IO) {
+                    container.gamificationStore.update {
+                        it.copy(lastServiceHeartbeatTimestamp = nowMillis)
+                    }
+                }
+            }
+
             val pkgName = event.packageName?.toString() ?: return
             if (shouldIgnorePackage(pkgName)) return
 
             Log.d(TAG, "Package détecté : $pkgName")
-            val app = applicationContext as FocusLockApplication
-            app.container.foregroundAppDetector.emitForegroundPackage(pkgName)
+            container.foregroundAppDetector.emitForegroundPackage(pkgName)
         } catch (t: Throwable) {
             Log.e(TAG, "Erreur dans onAccessibilityEvent", t)
         }

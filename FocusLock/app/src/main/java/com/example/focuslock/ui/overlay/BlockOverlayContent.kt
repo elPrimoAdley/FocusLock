@@ -35,6 +35,7 @@ import com.example.focuslock.ui.components.ElevatedCard
 import com.example.focuslock.ui.components.MintPillButton
 import com.example.focuslock.ui.theme.FocusTheme
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.time.Instant
 
 data class OverlayUiModel(
@@ -111,9 +112,45 @@ fun BlockOverlayContent(
         }
 
         if (showEmergencyPlaceholder) {
-            EmergencyPlaceholderScreen(
-                onBackToLock = { showEmergencyPlaceholder = false }
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val container = remember {
+                (context.applicationContext as com.example.focuslock.FocusLockApplication).container
+            }
+            val gamificationState by container.gamificationStore.state.collectAsState(
+                initial = com.example.focuslock.domain.store.GamificationState()
             )
+            val scope = rememberCoroutineScope()
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .systemBarsPadding()
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                com.example.focuslock.ui.components.MindfulPinGateContent(
+                    actionTitle = "Bris de glace (${gamificationState.strictAutoRelockMinutes} min)",
+                    actionDescription = "Suspend temporairement le verrouillage pendant ${gamificationState.strictAutoRelockMinutes} minutes. Le blocage se réactivera automatiquement à l'expiration.",
+                    gamificationState = gamificationState,
+                    gamificationStore = container.gamificationStore,
+                    clock = container.clock,
+                    onAuthorized = {
+                        scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            val unlockUntil = container.clock.instant()
+                                .plusSeconds(gamificationState.strictAutoRelockMinutes * 60L)
+                            container.gamificationStore.update {
+                                it.copy(emergencyUnlockUntilTimestamp = unlockUntil.toEpochMilli())
+                            }
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                showEmergencyPlaceholder = false
+                                onDismiss()
+                            }
+                        }
+                    },
+                    onCancel = { showEmergencyPlaceholder = false }
+                )
+            }
         } else {
             Column(
                 modifier = Modifier
@@ -333,44 +370,7 @@ fun BlockOverlayContent(
     }
 }
 
-@Composable
-private fun EmergencyPlaceholderScreen(onBackToLock: () -> Unit) {
-    val colors = FocusTheme.colors
-    val typo = FocusTheme.typography
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .systemBarsPadding()
-            .padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        ElevatedCard {
-            Text(
-                text = "🔒 SAS BRIS DE GLACE (PHASE 5)",
-                style = typo.monoTag,
-                color = colors.softCoral
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = "Clavier PIN PBKDF2 & Délai Mindful Edits",
-                style = typo.cardTitleSerif,
-                color = colors.ink
-            )
-            Spacer(modifier = Modifier.height(6.dp))
-            Text(
-                text = "Cet écran accueillera en Phase 5 le sas de décompression de 10 à 60 secondes et le clavier PIN circulaire indépendant pour déverrouiller 15 minutes en cas d'urgence.",
-                style = typo.bodySecondary,
-                color = colors.mutedInk
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            MintPillButton(
-                text = "Retourner à l'écran de concentration",
-                onClick = onBackToLock
-            )
-        }
-    }
-}
+
 
 private fun statusBadgeLabelFor(reason: BlockReason): String = when (reason) {
     BlockReason.ACTIVE_FOCUS_SESSION -> "🔒 MODE STRICT • SESSION D'ÉTUDE EN COURS"

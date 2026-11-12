@@ -1,11 +1,13 @@
 package com.example.focuslock.data.usage
 
 import android.app.AppOpsManager
-import android.app.usage.UsageEvents
-import android.app.usage.UsageStatsManager
 import android.content.Context
 import android.os.Process
 import android.util.Log
+import com.example.focuslock.domain.AppCategory
+import com.example.focuslock.engine.usage.DayUsageAggregation
+import com.example.focuslock.engine.usage.UsageAggregator
+import com.example.focuslock.engine.usage.UsageIntervalBuilder
 import java.time.Clock
 import java.time.LocalDate
 
@@ -18,14 +20,17 @@ class UsageStatsTracker(
         private const val TAG = "UsageStatsTracker"
     }
 
+    private val reader = UsageEventsReader(context)
+
     @Volatile
     private var cachedAtMillis: Long = 0L
 
     @Volatile
-    private var cachedUsageMinutes: Map<String, Int> = emptyMap()
+    private var cachedTodayAggregation: DayUsageAggregation? = null
 
     fun hasUsagePermission(): Boolean {
-        val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+        val appOps = context.getSystemService(Context.APP_OPS_SERVICE) as? AppOpsManager
+            ?: return false
         val mode = appOps.unsafeCheckOpNoThrow(
             AppOpsManager.OPSTR_GET_USAGE_STATS,
             Process.myUid(),
@@ -39,56 +44,57 @@ class UsageStatsTracker(
      * Utilise un cache de quelques secondes (2.18) sauf si forceRefresh = true.
      */
     fun getTodayUsageMinutes(forceRefresh: Boolean = false): Map<String, Int> {
-        if (!hasUsagePermission()) return emptyMap()
+        val today = LocalDate.now(clock)
+        val agg = getDayAggregation(today, emptyMap(), forceRefresh)
+        return agg?.minutesByPackage ?: emptyMap()
+    }
 
-        val nowMillis = clock.millis()
-        if (!forceRefresh && (nowMillis - cachedAtMillis) in 0..cacheTtlMillis) {
-            return cachedUsageMinutes
-        }
+    /**
+     * 4.12 : Récupère l'agrégation complète d'une journée locale [date] via [UsageEventsReader],
+     * [UsageIntervalBuilder] et [UsageAggregator].
+     */
+    fun getDayAggregation(
+        date: LocalDate,
+        categoryByPackage: Map<String, AppCategory> = emptyMap(),
+        forceRefresh: Boolean = false
+    ): DayUsageAggregation? {
+        if (!hasUsagePermission()) return null
 
+        val now = clock.instant()
+        val nowMillis = now.toEpochMilli()
         val zone = clock.zone
-        val startOfDayMillis = LocalDate.now(clock).atStartOfDay(zone).toInstant().toEpochMilli()
-        val usm = context.getSystemService(Context.USAGE_STATS_SERVICE) as? UsageStatsManager
-            ?: return emptyMap()
+        val today = now.atZone(zone).toLocalDate()
 
-        val durationPerPackageMs = mutableMapOf<String, Long>()
-        val lastResumeTimeMs = mutableMapOf<String, Long>()
-
-        val events = usm.queryEvents(startOfDayMillis, nowMillis)
-        val event = UsageEvents.Event()
-
-        while (events.hasNextEvent()) {
-            events.getNextEvent(event)
-            val pkg = event.packageName ?: continue
-            when (event.eventType) {
-                UsageEvents.Event.ACTIVITY_RESUMED -> {
-                    lastResumeTimeMs[pkg] = event.timeStamp
-                }
-                UsageEvents.Event.ACTIVITY_PAUSED,
-                UsageEvents.Event.ACTIVITY_STOPPED -> {
-                    val start = lastResumeTimeMs.remove(pkg)
-                    if (start != null && event.timeStamp > start) {
-                        durationPerPackageMs[pkg] =
-                            (durationPerPackageMs[pkg] ?: 0L) + (event.timeStamp - start)
-                    }
-                }
-            }
+        // Cache court de 5 secondes pour aujourd'hui
+        if (date == today && !forceRefresh && (nowMillis - cachedAtMillis) in 0..cacheTtlMillis) {
+            val cached = cachedTodayAggregation
+            if (cached != null) return cached
         }
 
-        // Si une application est encore ouverte à l'instant nowMillis, on compte jusqu'à nowMillis
-        for ((pkg, start) in lastResumeTimeMs) {
-            if (nowMillis > start) {
-                durationPerPackageMs[pkg] = (durationPerPackageMs[pkg] ?: 0L) + (nowMillis - start)
-            }
+        val dayStart = date.atStartOfDay(zone).toInstant()
+        val nextDayStart = date.plusDays(1).atStartOfDay(zone).toInstant()
+        val queryEnd = if (now.isBefore(nextDayStart)) now else nextDayStart
+
+        if (queryEnd.isBefore(dayStart)) return null
+
+        val rawEvents = reader.readEvents(dayStart, queryEnd)
+        val ignoredPackages = reader.getExcludedScreenTimePackages()
+        val intervals = UsageIntervalBuilder.buildIntervals(rawEvents, queryEnd, ignoredPackages)
+
+        val aggregation = UsageAggregator.aggregateForDay(
+            intervals = intervals,
+            date = date,
+            zoneId = zone,
+            categoryByPackage = categoryByPackage,
+            maxInstantCap = now
+        )
+
+        if (date == today) {
+            cachedTodayAggregation = aggregation
+            cachedAtMillis = nowMillis
         }
 
-        val minutesMap = durationPerPackageMs
-            .mapValues { (_, ms) -> (ms / 60_000L).toInt() }
-            .filterValues { it > 0 }
-
-        cachedUsageMinutes = minutesMap
-        cachedAtMillis = nowMillis
-        return minutesMap
+        return aggregation
     }
 
     /**

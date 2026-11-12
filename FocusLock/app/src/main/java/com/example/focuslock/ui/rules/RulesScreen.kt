@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -49,6 +50,7 @@ fun RulesScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val colors = FocusTheme.colors
     val typo = FocusTheme.typography
+    val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
 
     var showEditorSheet by remember { mutableStateOf(false) }
@@ -227,6 +229,36 @@ fun RulesScreen(
                 }
             }
         )
+    }
+
+    val bypass = uiState.pendingDebugBypass
+    if (bypass != null) {
+        val container = remember {
+            (context.applicationContext as com.example.focuslock.FocusLockApplication).container
+        }
+        val gamificationState by container.gamificationStore.state.collectAsState(
+            initial = com.example.focuslock.domain.store.GamificationState()
+        )
+        FocusModalSheet(
+            title = "Sas de Sécurité Stricte",
+            saveButtonText = "Fermer et conserver la protection",
+            rightActionSymbol = "🔒",
+            onDismissRequest = { viewModel.dismissDebugBypass() },
+            onSaveClick = { viewModel.dismissDebugBypass() }
+        ) {
+            com.example.focuslock.ui.components.MindfulPinGateContent(
+                actionTitle = "Protection EditGuard Active",
+                actionDescription = bypass.description,
+                gamificationState = gamificationState,
+                gamificationStore = container.gamificationStore,
+                clock = container.clock,
+                onAuthorized = {
+                    viewModel.dismissDebugBypass()
+                    bypass.onConfirmBypass()
+                },
+                onCancel = { viewModel.dismissDebugBypass() }
+            )
+        }
     }
 }
 

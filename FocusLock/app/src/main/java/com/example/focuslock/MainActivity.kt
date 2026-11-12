@@ -36,6 +36,9 @@ class MainActivity : ComponentActivity() {
             val now = container.clock.instant()
             container.focusSessionRepository.completeExpiredSessions(now)
             container.gamificationCoordinator.applyOverdue(now)
+            container.usageSnapshotter.catchUpUntilYesterday(now)
+            // 4.20 : Purge idempotente des logs d'audit de plus de 90 jours
+            container.blockAuditRepository.deleteLogsOlderThan(now.minusSeconds(90L * 86_400L))
         }
     }
 }

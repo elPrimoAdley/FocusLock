@@ -1,7 +1,10 @@
 package com.example.focuslock.data.accessibility
 
+import android.content.Context
+import android.media.AudioManager
 import com.example.focuslock.data.usage.UsageStatsTracker
 import com.example.focuslock.domain.BlockDecision
+import com.example.focuslock.domain.BlockReason
 import com.example.focuslock.domain.BlockRule
 import com.example.focuslock.domain.FocusSession
 import com.example.focuslock.domain.QuestTask
@@ -28,10 +31,8 @@ data class EvaluationSnapshot(
     val gamification: GamificationState
 )
 
-/**
- * 4.8 : Source unique de décision partagée entre FocusAccessibilityService et le Coffre de Contenu.
- */
 class AccessDecisionEvaluator(
+    private val context: Context,
     private val clock: Clock,
     private val usageStatsTracker: UsageStatsTracker,
     private val ruleRepository: RuleRepository,
@@ -40,12 +41,30 @@ class AccessDecisionEvaluator(
     private val gamificationStore: GamificationStore,
     private val gamificationCoordinator: GamificationCoordinator
 ) {
+    companion object {
+        // Autorisation temporaire de 60 s quand l'utilisateur clique sur un raccourci de l'écran Santé
+        @Volatile
+        var settingsPassUntilMillis: Long = 0L
 
-    /**
-     * Évalue un package à partir des flux déjà en mémoire (appelé par le service d'accessibilité).
-     */
+        fun grantTemporarySettingsPass(nowMillis: Long, durationMillis: Long = 60_000L) {
+            settingsPassUntilMillis = nowMillis + durationMillis
+        }
+    }
+
+    fun isPhoneCallActive(): Boolean {
+        val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+            ?: return false
+        return when (audioManager.mode) {
+            AudioManager.MODE_IN_CALL,
+            AudioManager.MODE_RINGTONE,
+            AudioManager.MODE_IN_COMMUNICATION -> true
+            else -> false
+        }
+    }
+
     suspend fun evaluateFromMemory(
         foregroundPackage: String,
+        foregroundClassName: String? = null,
         rules: List<BlockRule>,
         tasks: List<QuestTask>,
         sessions: List<FocusSession>,
@@ -53,6 +72,38 @@ class AccessDecisionEvaluator(
         ignoreViewingWindow: Boolean = false
     ): BlockDecision {
         val now = clock.instant()
+        val nowMillis = now.toEpochMilli()
+        val callInProgress = isPhoneCallActive()
+
+        val emergencyUnlockUntil = gamification.emergencyUnlockUntilTimestamp?.let {
+            Instant.ofEpochMilli(it)
+        }
+
+        // 5.7 : Protection anti-arrêt forcé / anti-désinstallation sur com.android.settings
+        if (!callInProgress &&
+            foregroundPackage == "com.android.settings" &&
+            gamification.blockUninstallAndSettings &&
+            nowMillis > settingsPassUntilMillis &&
+            (emergencyUnlockUntil == null || !now.isBefore(emergencyUnlockUntil))
+        ) {
+            val isSensitiveSettingsScreen = foregroundClassName == null ||
+                foregroundClassName.contains("InstalledAppDetails", ignoreCase = true) ||
+                foregroundClassName.contains("Accessibility", ignoreCase = true) ||
+                foregroundClassName.contains("DeviceAdmin", ignoreCase = true) ||
+                foregroundClassName.contains("SpaActivity", ignoreCase = true)
+
+            val hasActiveLock = sessions.any { now.isBefore(it.plannedEndAt) } ||
+                rules.any { it.isEnabled && it.isStrictLocked }
+
+            if (isSensitiveSettingsScreen && hasActiveLock) {
+                return BlockDecision.Block(
+                    reason = BlockReason.ACTIVE_FOCUS_SESSION,
+                    ruleId = null,
+                    message = "Protection Anti-Sabotage : Réglages système verrouillés pendant une session stricte"
+                )
+            }
+        }
+
         val todayEpochDay = now.atZone(clock.zone).toLocalDate().toEpochDay()
         val usageMap = withContext(Dispatchers.IO) {
             usageStatsTracker.getTodayUsageMinutes(forceRefresh = false)
@@ -77,6 +128,8 @@ class AccessDecisionEvaluator(
         }
 
         val securityState = SecurityState(
+            isCallInProgress = callInProgress,
+            emergencyUnlockUntil = emergencyUnlockUntil,
             quotaMalusReductionPercent = activeQuotaMalus,
             viewingWindow = viewingWindow
         )
@@ -100,10 +153,6 @@ class AccessDecisionEvaluator(
         )
     }
 
-    /**
-     * Évalue immédiatement l'accès à un package (appelé par « Ouvrir le post » dans le Coffre).
-     * Met d'abord à jour les échéances et sessions expirées pour garantir une décision à la seconde près.
-     */
     suspend fun evaluateLiveForPackage(
         targetPackage: String,
         ignoreViewingWindow: Boolean = true
