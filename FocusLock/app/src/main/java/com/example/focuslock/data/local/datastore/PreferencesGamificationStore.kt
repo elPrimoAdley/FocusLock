@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStoreFile
 import com.example.focuslock.domain.store.GamificationState
 import com.example.focuslock.domain.store.GamificationStore
@@ -36,6 +37,11 @@ class PreferencesGamificationStore(
         val KEY_RECREATION_SPENT_TODAY_XP = intPreferencesKey("recreationSpentTodayXp")
         val KEY_RECREATION_SPENT_EPOCH_DAY = longPreferencesKey("recreationSpentEpochDay")
         val KEY_RECREATION_CREDIT_UNTIL_TIMESTAMP = longPreferencesKey("recreationCreditUntilTimestamp")
+        val KEY_VIEWING_WINDOW_PACKAGE = stringPreferencesKey("viewingWindowPackage")
+        val KEY_VIEWING_WINDOW_EXPIRES_AT = longPreferencesKey("viewingWindowExpiresAtTimestamp")
+        val KEY_LAST_USAGE_SNAPSHOT_EPOCH_DAY = longPreferencesKey("lastUsageSnapshotEpochDay")
+        val KEY_AWAKE_START_MINUTES = intPreferencesKey("awakeStartMinutes")
+        val KEY_AWAKE_END_MINUTES = intPreferencesKey("awakeEndMinutes")
 
         @Volatile
         private var INSTANCE: DataStore<Preferences>? = null
@@ -106,6 +112,22 @@ class PreferencesGamificationStore(
             } else {
                 prefs.remove(KEY_RECREATION_CREDIT_UNTIL_TIMESTAMP)
             }
+
+            if (next.viewingWindowPackage != null && next.viewingWindowExpiresAtTimestamp != null) {
+                prefs[KEY_VIEWING_WINDOW_PACKAGE] = next.viewingWindowPackage
+                prefs[KEY_VIEWING_WINDOW_EXPIRES_AT] = next.viewingWindowExpiresAtTimestamp
+            } else {
+                prefs.remove(KEY_VIEWING_WINDOW_PACKAGE)
+                prefs.remove(KEY_VIEWING_WINDOW_EXPIRES_AT)
+            }
+
+            if (next.lastUsageSnapshotEpochDay != null) {
+                prefs[KEY_LAST_USAGE_SNAPSHOT_EPOCH_DAY] = next.lastUsageSnapshotEpochDay
+            } else {
+                prefs.remove(KEY_LAST_USAGE_SNAPSHOT_EPOCH_DAY)
+            }
+            prefs[KEY_AWAKE_START_MINUTES] = next.awakeStartMinutes.coerceIn(0, 24 * 60 - 1)
+            prefs[KEY_AWAKE_END_MINUTES] = next.awakeEndMinutes.coerceIn(0, 24 * 60 - 1)
         }
         return updatedState
     }
@@ -122,6 +144,11 @@ class PreferencesGamificationStore(
         lastP2CompletionEpochDay = this[KEY_LAST_P2_COMPLETION_EPOCH_DAY],
         recreationSpentTodayXp = this[KEY_RECREATION_SPENT_TODAY_XP] ?: 0,
         recreationSpentEpochDay = this[KEY_RECREATION_SPENT_EPOCH_DAY],
-        recreationCreditUntilTimestamp = this[KEY_RECREATION_CREDIT_UNTIL_TIMESTAMP]
+        recreationCreditUntilTimestamp = this[KEY_RECREATION_CREDIT_UNTIL_TIMESTAMP],
+        viewingWindowPackage = this[KEY_VIEWING_WINDOW_PACKAGE],
+        viewingWindowExpiresAtTimestamp = this[KEY_VIEWING_WINDOW_EXPIRES_AT],
+        lastUsageSnapshotEpochDay = this[KEY_LAST_USAGE_SNAPSHOT_EPOCH_DAY],
+        awakeStartMinutes = this[KEY_AWAKE_START_MINUTES] ?: (7 * 60),
+        awakeEndMinutes = this[KEY_AWAKE_END_MINUTES] ?: (23 * 60)
     )
 }

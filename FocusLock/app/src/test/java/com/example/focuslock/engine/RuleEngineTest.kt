@@ -711,4 +711,95 @@ class RuleEngineTest {
             RuleEngine.evaluate(clock, instagram, disabledRules, emptyList(), emptyList(), usageOverQuota) is BlockDecision.Allow
         )
     }
+
+    // =========================================================================
+    // 4.2 FENÊTRE DE CONSULTATION DU COFFRE ( ENTRE NIVEAU 7 ET NIVEAU 8 )
+    // =========================================================================
+
+    @Test
+    fun `4_2 viewingWindow allows before expiration, blocks at exact expiration second, and ignores other packages`() {
+        val expiresAt = fixedClock("2026-11-09T14:03:00").instant()
+        val stateWithWindow = SecurityState(
+            viewingWindow = com.example.focuslock.domain.ViewingWindow(
+                packageName = instagram,
+                expiresAt = expiresAt
+            )
+        )
+
+        // 1. 1 seconde avant l'expiration (14:02:59) -> inchangé (Allow)
+        assertEquals(
+            BlockDecision.Allow,
+            RuleEngine.evaluate(
+                clock = fixedClock("2026-11-09T14:02:59"),
+                foregroundPackage = instagram,
+                securityState = stateWithWindow
+            )
+        )
+
+        // 2. À la seconde pile d'expiration (14:03:00) -> Block(VIEWING_WINDOW_ENDED)
+        assertEquals(
+            BlockDecision.Block(
+                reason = BlockReason.VIEWING_WINDOW_ENDED,
+                ruleId = null,
+                message = "Consultation terminée (3 min écoulées)"
+            ),
+            RuleEngine.evaluate(
+                clock = fixedClock("2026-11-09T14:03:00"),
+                foregroundPackage = instagram,
+                securityState = stateWithWindow
+            )
+        )
+
+        // 3. Un autre package (TikTok ou Spotify) est ignoré même après l'expiration -> Allow
+        assertEquals(
+            BlockDecision.Allow,
+            RuleEngine.evaluate(
+                clock = fixedClock("2026-11-09T14:05:00"),
+                foregroundPackage = tiktok,
+                securityState = stateWithWindow
+            )
+        )
+    }
+
+    @Test
+    fun `4_2 viewingWindow never bypasses Levels 3 to 7 and Levels 1-2 override expired viewingWindow`() {
+        val expiresAt = fixedClock("2026-11-09T14:03:00").instant()
+        val stateWithValidWindow = SecurityState(
+            viewingWindow = com.example.focuslock.domain.ViewingWindow(
+                packageName = instagram,
+                expiresAt = expiresAt
+            )
+        )
+
+        val scheduleRule = BlockRule(
+            id = "sched-afternoon",
+            title = "Après-midi studieux",
+            ruleType = RuleType.SCHEDULE,
+            targetPackages = setOf(instagram),
+            startTimeMinutes = 13 * 60,
+            endTimeMinutes = 16 * 60
+        )
+
+        // Même avant l'expiration de la fenêtre (14:01:00), une règle de niveau 7 bloque !
+        assertEquals(
+            BlockDecision.Block(BlockReason.SCHEDULE_OR_QUOTA, "sched-afternoon", "Après-midi studieux"),
+            RuleEngine.evaluate(
+                clock = fixedClock("2026-11-09T14:01:00"),
+                foregroundPackage = instagram,
+                rules = listOf(scheduleRule),
+                securityState = stateWithValidWindow
+            )
+        )
+
+        // Même après l'expiration de la fenêtre (14:05:00), un appel en cours (Niveau 1) ou urgence (Niveau 2) autorise
+        val expiredWindowWithCall = stateWithValidWindow.copy(isCallInProgress = true)
+        assertEquals(
+            BlockDecision.Allow,
+            RuleEngine.evaluate(
+                clock = fixedClock("2026-11-09T14:05:00"),
+                foregroundPackage = instagram,
+                securityState = expiredWindowWithCall
+            )
+        )
+    }
 }

@@ -64,6 +64,19 @@ interface BlockAuditRepository {
     suspend fun getTodayCountForPackage(packageName: String, startOfDay: Instant): Int
     suspend fun getTotalCountForPackage(packageName: String): Int
     fun observeTotalDistractionsPreventedSince(startOfDay: Instant): Flow<Int>
+    suspend fun deleteLogsOlderThan(cutoff: Instant): Int
+}
+
+data class DailyAppUsageRecord(
+    val epochDay: Long,
+    val packageName: String,
+    val totalMs: Long
+)
+
+interface DailyUsageRepository {
+    suspend fun saveDayUsage(epochDay: Long, usageByPackageMs: Map<String, Long>)
+    suspend fun getUsageBetweenDays(startEpochDay: Long, endEpochDay: Long): List<DailyAppUsageRecord>
+    fun observeUsageBetweenDays(startEpochDay: Long, endEpochDay: Long): Flow<List<DailyAppUsageRecord>>
 }
 
 interface AppMetadataRepository {
@@ -72,8 +85,20 @@ interface AppMetadataRepository {
     suspend fun upsertMetadata(metadata: AppMetadata)
 }
 
+sealed interface VaultSaveResult {
+    data class Saved(val post: SavedPost) : VaultSaveResult
+    data class Duplicate(val existingPost: SavedPost) : VaultSaveResult
+}
+
 interface SavedContentRepository {
     fun observeAllSavedPosts(): Flow<List<SavedPost>>
+    suspend fun getSavedPostById(id: String): SavedPost?
+    suspend fun getSavedPostBySourceUrl(sourceUrl: String): SavedPost?
+    suspend fun insertIfAbsent(post: SavedPost): VaultSaveResult
     suspend fun upsertSavedPost(post: SavedPost)
+    suspend fun updateTitleTagAndNote(id: String, userTitle: String, tag: String, personalNote: String?)
+    suspend fun updateReviewedStatus(id: String, isReviewed: Boolean)
+    suspend fun updateFavoriteStatus(id: String, isFavorite: Boolean)
+    suspend fun incrementOpenCountAndMarkReviewed(id: String): SavedPost?
     suspend fun deleteSavedPostById(id: String)
 }

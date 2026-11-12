@@ -89,4 +89,17 @@ class AppContainer(val appContext: Context) {
     val usageStatsTracker: UsageStatsTracker by lazy {
         UsageStatsTracker(appContext, clock)
     }
+
+    // 4.8 Source de décision d'accès unique
+    val accessDecisionEvaluator: com.example.focuslock.data.accessibility.AccessDecisionEvaluator by lazy {
+        com.example.focuslock.data.accessibility.AccessDecisionEvaluator(
+            clock = clock,
+            usageStatsTracker = usageStatsTracker,
+            ruleRepository = ruleRepository,
+            questTaskRepository = questTaskRepository,
+            focusSessionRepository = focusSessionRepository,
+            gamificationStore = gamificationStore,
+            gamificationCoordinator = gamificationCoordinator
+        )
+    }
 }

@@ -238,7 +238,17 @@ private fun FocusNavHost(
             )
         }
         composable(Destination.Vault.route) {
-            PlaceholderSectionScreen(destination = Destination.Vault, onOpenDrawer = onOpenDrawer)
+            val context = androidx.compose.ui.platform.LocalContext.current
+            val container = remember {
+                (context.applicationContext as com.example.focuslock.FocusLockApplication).container
+            }
+            val vaultViewModel: com.example.focuslock.ui.vault.VaultViewModel = viewModel(
+                factory = com.example.focuslock.ui.vault.VaultViewModel.factory(container)
+            )
+            com.example.focuslock.ui.vault.VaultScreen(
+                viewModel = vaultViewModel,
+                onOpenDrawer = onOpenDrawer
+            )
         }
         composable(Destination.Insights.route) {
             PlaceholderSectionScreen(destination = Destination.Insights, onOpenDrawer = onOpenDrawer)

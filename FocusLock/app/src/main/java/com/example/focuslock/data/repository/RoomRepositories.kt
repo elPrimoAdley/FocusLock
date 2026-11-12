@@ -158,6 +158,9 @@ class RoomBlockAuditRepository(private val dao: BlockAuditLogDao) : BlockAuditRe
 
     override fun observeTotalDistractionsPreventedSince(startOfDay: Instant): Flow<Int> =
         dao.observeTotalDistractionsPreventedSince(startOfDay.toEpochMilli())
+
+    override suspend fun deleteLogsOlderThan(cutoff: Instant): Int =
+        dao.deleteLogsOlderThan(cutoff.toEpochMilli())
 }
 
 class RoomAppMetadataRepository(private val dao: AppMetadataDao) : AppMetadataRepository {
@@ -175,9 +178,104 @@ class RoomSavedContentRepository(private val dao: SavedContentDao) : SavedConten
     override fun observeAllSavedPosts(): Flow<List<SavedPost>> =
         dao.observeAllSavedContents().map { list -> list.map { it.toDomain() } }
 
+    override suspend fun getSavedPostById(id: String): SavedPost? =
+        dao.getSavedContentById(id)?.toDomain()
+
+    override suspend fun getSavedPostBySourceUrl(sourceUrl: String): SavedPost? =
+        dao.getSavedContentBySourceUrl(sourceUrl)?.toDomain()
+
+    override suspend fun insertIfAbsent(post: SavedPost): com.example.focuslock.domain.repository.VaultSaveResult {
+        val existing = dao.getSavedContentBySourceUrl(post.sourceUrl)
+        if (existing != null) {
+            return com.example.focuslock.domain.repository.VaultSaveResult.Duplicate(existing.toDomain())
+        }
+        return try {
+            dao.insertSavedContent(post.toEntity())
+            com.example.focuslock.domain.repository.VaultSaveResult.Saved(post)
+        } catch (_: Throwable) {
+            val fallbackExisting = dao.getSavedContentBySourceUrl(post.sourceUrl)?.toDomain() ?: post
+            com.example.focuslock.domain.repository.VaultSaveResult.Duplicate(fallbackExisting)
+        }
+    }
+
     override suspend fun upsertSavedPost(post: SavedPost) =
         dao.upsertSavedContent(post.toEntity())
 
+    override suspend fun updateTitleTagAndNote(
+        id: String,
+        userTitle: String,
+        tag: String,
+        personalNote: String?
+    ) = dao.updateTitleTagAndNote(id, userTitle, tag, personalNote)
+
+    override suspend fun updateReviewedStatus(id: String, isReviewed: Boolean) =
+        dao.updateReviewedStatus(id, isReviewed)
+
+    override suspend fun updateFavoriteStatus(id: String, isFavorite: Boolean) =
+        dao.updateFavoriteStatus(id, isFavorite)
+
+    override suspend fun incrementOpenCountAndMarkReviewed(id: String): SavedPost? {
+        dao.incrementOpenCountAndMarkReviewed(id)
+        return dao.getSavedContentById(id)?.toDomain()
+    }
+
     override suspend fun deleteSavedPostById(id: String) =
         dao.deleteSavedContentById(id)
+}
+
+class RoomDailyUsageRepository(
+    private val dao: com.example.focuslock.data.local.dao.DailyUsageDao
+) : com.example.focuslock.domain.repository.DailyUsageRepository {
+
+    override suspend fun saveDayUsage(epochDay: Long, usageByPackageMs: Map<String, Long>) {
+        val entities = if (usageByPackageMs.isEmpty()) {
+            // Marqueur de journée évaluée avec 0 ms d'usage (distingue un vrai 0 d'un jour "indisponible")
+            listOf(
+                com.example.focuslock.data.local.entity.DailyUsageEntity(
+                    epochDay = epochDay,
+                    packageName = SENTINEL_ZERO_USAGE_PACKAGE,
+                    totalMs = 0L
+                )
+            )
+        } else {
+            usageByPackageMs.map { (pkg, ms) ->
+                com.example.focuslock.data.local.entity.DailyUsageEntity(
+                    epochDay = epochDay,
+                    packageName = pkg,
+                    totalMs = ms
+                )
+            }
+        }
+        dao.upsertDailyUsages(entities)
+    }
+
+    override suspend fun getUsageBetweenDays(
+        startEpochDay: Long,
+        endEpochDay: Long
+    ): List<com.example.focuslock.domain.repository.DailyAppUsageRecord> =
+        dao.getUsageBetweenDays(startEpochDay, endEpochDay).map {
+            com.example.focuslock.domain.repository.DailyAppUsageRecord(
+                epochDay = it.epochDay,
+                packageName = it.packageName,
+                totalMs = it.totalMs
+            )
+        }
+
+    override fun observeUsageBetweenDays(
+        startEpochDay: Long,
+        endEpochDay: Long
+    ): Flow<List<com.example.focuslock.domain.repository.DailyAppUsageRecord>> =
+        dao.observeUsageBetweenDays(startEpochDay, endEpochDay).map { list ->
+            list.map {
+                com.example.focuslock.domain.repository.DailyAppUsageRecord(
+                    epochDay = it.epochDay,
+                    packageName = it.packageName,
+                    totalMs = it.totalMs
+                )
+            }
+        }
+
+    companion object {
+        const val SENTINEL_ZERO_USAGE_PACKAGE = "__focuslock_day_recorded__"
+    }
 }

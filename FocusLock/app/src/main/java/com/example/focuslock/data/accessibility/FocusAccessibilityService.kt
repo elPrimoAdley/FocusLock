@@ -59,7 +59,7 @@ class FocusAccessibilityService : AccessibilityService() {
                 clock = container.clock,
                 packageManager = packageManager,
                 detector = container.foregroundAppDetector,
-                usageStatsTracker = container.usageStatsTracker,
+                accessDecisionEvaluator = container.accessDecisionEvaluator,
                 ruleRepository = container.ruleRepository,
                 questTaskRepository = container.questTaskRepository,
                 focusSessionRepository = container.focusSessionRepository,

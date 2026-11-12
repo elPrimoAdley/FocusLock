@@ -2,28 +2,28 @@ package com.example.focuslock.data.accessibility
 
 import android.content.pm.PackageManager
 import android.util.Log
-import com.example.focuslock.data.usage.UsageStatsTracker
 import com.example.focuslock.domain.BlockAuditLog
 import com.example.focuslock.domain.BlockDecision
 import com.example.focuslock.domain.BlockReason
 import com.example.focuslock.domain.BlockRule
 import com.example.focuslock.domain.FocusSession
 import com.example.focuslock.domain.QuestTask
-import com.example.focuslock.domain.SecurityState
+import com.example.focuslock.domain.RuleType
 import com.example.focuslock.domain.detector.ForegroundAppDetector
 import com.example.focuslock.domain.isCompletedToday
 import com.example.focuslock.domain.repository.BlockAuditRepository
 import com.example.focuslock.domain.repository.FocusSessionRepository
-import com.example.focuslock.engine.RuleFormatterAndDetoxCalculator
 import com.example.focuslock.domain.repository.QuestTaskRepository
 import com.example.focuslock.domain.repository.RuleRepository
 import com.example.focuslock.domain.store.GamificationState
 import com.example.focuslock.domain.store.GamificationStore
 import com.example.focuslock.engine.GamificationCoordinator
-import com.example.focuslock.engine.RuleEngine
+import com.example.focuslock.engine.RuleFormatterAndDetoxCalculator
 import com.example.focuslock.ui.overlay.OverlayUiModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +36,7 @@ import java.time.Clock
 import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.util.concurrent.ConcurrentHashMap
 
 class BlockEnforcementCoordinator(
@@ -43,7 +44,7 @@ class BlockEnforcementCoordinator(
     private val clock: Clock,
     private val packageManager: PackageManager,
     private val detector: ForegroundAppDetector,
-    private val usageStatsTracker: UsageStatsTracker,
+    private val accessDecisionEvaluator: AccessDecisionEvaluator,
     private val ruleRepository: RuleRepository,
     private val questTaskRepository: QuestTaskRepository,
     private val focusSessionRepository: FocusSessionRepository,
@@ -56,7 +57,7 @@ class BlockEnforcementCoordinator(
     companion object {
         private const val TAG = "BlockCoordinator"
         private const val DEDUP_WINDOW_MILLIS = 2_000L
-        private const val OVERDUE_THROTTLE_MILLIS = 30_000L // 3.9 : Limité à 1 fois toutes les ~30 s
+        private const val OVERDUE_THROTTLE_MILLIS = 30_000L
     }
 
     private val rulesState: StateFlow<List<BlockRule>> = ruleRepository
@@ -75,12 +76,16 @@ class BlockEnforcementCoordinator(
         .state
         .stateIn(scope, SharingStarted.Eagerly, GamificationState())
 
-    // 3.9 : Prochaine échéance mise en cache en mémoire + horodatage du dernier check
     @Volatile
     private var cachedNextDueAt: Instant? = null
 
     @Volatile
     private var lastOverdueEvalMillis: Long = 0L
+
+    @Volatile
+    private var currentForegroundPackage: String? = null
+
+    private var viewingWindowExpiryJob: Job? = null
 
     private val lastAuditTimestampByPackage = ConcurrentHashMap<String, Long>()
 
@@ -88,7 +93,7 @@ class BlockEnforcementCoordinator(
     val overlayState: StateFlow<OverlayUiModel?> = _overlayState.asStateFlow()
 
     fun start() {
-        // Maintient en cache mémoire la prochaine échéance non pénalisée
+        // 1. Surveillance des tâches et ré-évaluation de la checklist de routine
         scope.launch {
             tasksState.collectLatest { tasks ->
                 cachedNextDueAt = tasks
@@ -97,7 +102,6 @@ class BlockEnforcementCoordinator(
                     .mapNotNull { it.dueAt }
                     .minOrNull()
 
-                // 3.9 : Après chaque modification de tâche, vérifie si une échéance est dépassée
                 val nextDue = cachedNextDueAt
                 val now = clock.instant()
                 if (nextDue != null && now.isAfter(nextDue)) {
@@ -106,17 +110,40 @@ class BlockEnforcementCoordinator(
                     }
                 }
 
-                // 2.21 : Ré-évaluation automatique si l'overlay est affiché
+                // Ne ré-évalue automatiquement que si l'overlay affiché n'est PAS une fin de fenêtre de consultation
                 val currentOverlay = _overlayState.value
-                if (currentOverlay != null) {
+                if (currentOverlay != null && currentOverlay.reason != BlockReason.VIEWING_WINDOW_ENDED) {
                     evaluatePackage(currentOverlay.blockedPackageName, isReevaluation = true)
                 }
             }
         }
 
-        // Écoute les changements d'application au premier plan
+        // 2. 4.9 : Surveillance de l'expiration exacte de la fenêtre de consultation de 3 min
+        scope.launch {
+            gamificationState.collectLatest { gState ->
+                viewingWindowExpiryJob?.cancel()
+                val targetPkg = gState.viewingWindowPackage
+                val expiresAtMillis = gState.viewingWindowExpiresAtTimestamp
+                if (targetPkg != null && expiresAtMillis != null) {
+                    val delayMillis = (expiresAtMillis - clock.millis()).coerceAtLeast(0L)
+                    viewingWindowExpiryJob = scope.launch {
+                        delay(delayMillis)
+                        // Si l'utilisateur est encore sur Instagram à l'expiration (ou si la fenêtre vient d'expirer)
+                        if (currentForegroundPackage == targetPkg) {
+                            evaluatePackage(targetPkg, isReevaluation = false)
+                        } else {
+                            // Nettoie silencieusement la fenêtre expirée en arrière-plan
+                            clearViewingWindowIdempotently()
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Écoute des changements d'application au premier plan
         scope.launch {
             detector.foregroundPackages.collect { pkgName ->
+                currentForegroundPackage = pkgName
                 evaluatePackage(pkgName, isReevaluation = false)
             }
         }
@@ -139,7 +166,13 @@ class BlockEnforcementCoordinator(
         val now = clock.instant()
         val nowMillis = now.toEpochMilli()
 
-        // 3.9 : Vérifie si la prochaine échéance en cache est dépassée ET respecte le throttle de 30 s
+        val hasExpiredRunningSession = sessionsState.value.any { !now.isBefore(it.plannedEndAt) }
+        if (hasExpiredRunningSession) {
+            withContext(Dispatchers.IO) {
+                focusSessionRepository.completeExpiredSessions(now)
+            }
+        }
+
         val nextDue = cachedNextDueAt
         val isDueReached = nextDue != null && now.isAfter(nextDue)
         val isThrottleElapsed = (nowMillis - lastOverdueEvalMillis) >= OVERDUE_THROTTLE_MILLIS
@@ -154,45 +187,25 @@ class BlockEnforcementCoordinator(
             sessionsState.value
         }
 
-        // 3.22 : Si une session en mémoire vient d'expirer (plannedEndAt <= now), on la clôture idempotemment
-        val hasExpiredRunningSession = sessionsState.value.any { !now.isBefore(it.plannedEndAt) }
-        if (hasExpiredRunningSession) {
-            withContext(Dispatchers.IO) {
-                focusSessionRepository.completeExpiredSessions(now)
-            }
-        }
-
         val rules = rulesState.value
         val tasks = tasksState.value
-        val usageMap = withContext(Dispatchers.IO) {
-            usageStatsTracker.getTodayUsageMinutes(forceRefresh = false)
-        }
-        val securityState = SecurityState(
-            quotaMalusReductionPercent = gamificationState.value.quotaMalusReductionPercent
-        )
-
         val gState = gamificationState.value
-        val activeRecreationCredit = gState.recreationCreditUntilTimestamp?.let { untilMillis ->
-            com.example.focuslock.domain.RecreationCredit(
-                packageName = null,
-                validUntil = Instant.ofEpochMilli(untilMillis)
-            )
-        }
 
-        val decision = RuleEngine.evaluate(
-            clock = clock,
+        val decision = accessDecisionEvaluator.evaluateFromMemory(
             foregroundPackage = pkgName,
             rules = rules,
             tasks = tasks,
             sessions = sessions,
-            todayUsageMinutes = usageMap,
-            securityState = securityState,
-            recreationCredit = activeRecreationCredit
+            gamification = gState,
+            ignoreViewingWindow = false
         )
 
         when (decision) {
             is BlockDecision.Allow -> {
-                if (isReevaluation && _overlayState.value?.blockedPackageName == pkgName) {
+                if (isReevaluation &&
+                    _overlayState.value?.blockedPackageName == pkgName &&
+                    _overlayState.value?.reason != BlockReason.VIEWING_WINDOW_ENDED
+                ) {
                     Log.i(TAG, "Conditions remplies pour $pkgName -> fermeture automatique de l'overlay.")
                     _overlayState.value = null
                     onDismissOverlay()
@@ -213,24 +226,30 @@ class BlockEnforcementCoordinator(
         isReevaluation: Boolean
     ) {
         val nowMillis = clock.millis()
-        val startOfDayInstant = LocalDate.now(clock).atStartOfDay(clock.zone).toInstant()
+        val todayLocalDate = LocalDate.now(clock)
+        val startOfDayInstant = todayLocalDate.atStartOfDay(clock.zone).toInstant()
 
-        // 2.19 : Anti-doublon sur une fenêtre de 2 secondes par application
-        val lastLoggedAt = lastAuditTimestampByPackage[pkgName] ?: 0L
-        val shouldInsertLog = !isReevaluation && (nowMillis - lastLoggedAt) >= DEDUP_WINDOW_MILLIS
-
-        if (shouldInsertLog) {
-            lastAuditTimestampByPackage[pkgName] = nowMillis
-            withContext(Dispatchers.IO) {
-                blockAuditRepository.insertLog(
-                    BlockAuditLog(
-                        timestamp = clock.instant(),
-                        blockedPackageName = pkgName,
-                        triggerRuleId = decision.ruleId,
-                        reasonCode = decision.reason,
-                        explanationText = decision.message ?: decision.reason.name
+        // 4.9 : Si le blocage est VIEWING_WINDOW_ENDED, on efface la fenêtre de façon idempotente
+        // et on NE l'ajoute PAS au compteur de « Distractions évitées ».
+        if (decision.reason == BlockReason.VIEWING_WINDOW_ENDED) {
+            clearViewingWindowIdempotently()
+            currentForegroundPackage = null
+        } else {
+            val lastLoggedAt = lastAuditTimestampByPackage[pkgName] ?: 0L
+            val shouldInsertLog = !isReevaluation && (nowMillis - lastLoggedAt) >= DEDUP_WINDOW_MILLIS
+            if (shouldInsertLog) {
+                lastAuditTimestampByPackage[pkgName] = nowMillis
+                withContext(Dispatchers.IO) {
+                    blockAuditRepository.insertLog(
+                        BlockAuditLog(
+                            timestamp = clock.instant(),
+                            blockedPackageName = pkgName,
+                            triggerRuleId = decision.ruleId,
+                            reasonCode = decision.reason,
+                            explanationText = decision.message ?: decision.reason.name
+                        )
                     )
-                )
+                }
             }
         }
 
@@ -243,27 +262,29 @@ class BlockEnforcementCoordinator(
         val matchedRule = rules.firstOrNull { it.id == decision.ruleId }
         val matchedSession = sessions.firstOrNull { it.id == decision.ruleId }
 
-        val todayLocalDate = LocalDate.now(clock)
-        val reopenDate: LocalDate? = if (matchedRule?.ruleType == com.example.focuslock.domain.RuleType.ALTERNATING_DETOX) {
+        val reopenDate = if (matchedRule?.ruleType == RuleType.ALTERNATING_DETOX) {
             RuleFormatterAndDetoxCalculator.nextReopenDate(matchedRule, todayLocalDate)
         } else {
             null
         }
 
         val statusPillOverride = when {
-            matchedRule?.ruleType == com.example.focuslock.domain.RuleType.SABBATICAL && matchedRule.pauseUntil != null ->
+            decision.reason == BlockReason.VIEWING_WINDOW_ENDED ->
+                "📥 COFFRE DE CONTENU • CONSULTATION TERMINÉE"
+            matchedRule?.ruleType == RuleType.SABBATICAL && matchedRule.pauseUntil != null ->
                 RuleFormatterAndDetoxCalculator.formatSabbaticalOverlayPill(
                     matchedRule.pauseUntil,
                     clock.zone
                 )
             reopenDate != null && reopenDate.isAfter(todayLocalDate) ->
                 "PAUSE DÉTOX • VERROUILLÉ JUSQU'AU ${
-                    reopenDate.format(java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy"))
+                    reopenDate.format(DateTimeFormatter.ofPattern("dd/MM/yyyy"))
                 }"
             else -> null
         }
 
         val targetEnd = when {
+            decision.reason == BlockReason.VIEWING_WINDOW_ENDED -> null
             matchedSession != null -> matchedSession.plannedEndAt
             matchedRule?.pauseUntil != null -> matchedRule.pauseUntil
             reopenDate != null && reopenDate.isAfter(todayLocalDate) ->
@@ -290,17 +311,28 @@ class BlockEnforcementCoordinator(
             emptyList()
         }
 
-        val defaultGentleMessage = "C'est ton temps d'étude. Une minute ici est une minute que tu ne récupéreras pas."
+        val defaultGentleMessage = when (decision.reason) {
+            BlockReason.VIEWING_WINDOW_ENDED ->
+                "Les 3 minutes de consultation du post sauvegardé sont écoulées. Reviens au calme."
+            else ->
+                "C'est ton temps d'étude. Une minute ici est une minute que tu ne récupéreras pas."
+        }
+
         val customMsg = matchedRule?.customBlockMessage
             ?.takeIf { it.isNotBlank() }
             ?: defaultGentleMessage
+
+        val ruleTitle = when (decision.reason) {
+            BlockReason.VIEWING_WINDOW_ENDED -> "Consultation terminée"
+            else -> matchedRule?.title ?: matchedSession?.label ?: decision.message ?: "Règle Active"
+        }
 
         val uiModel = OverlayUiModel(
             blockedPackageName = pkgName,
             appDisplayName = resolveAppLabel(pkgName),
             reason = decision.reason,
             ruleOrSessionId = decision.ruleId,
-            ruleTitle = matchedRule?.title ?: matchedSession?.label ?: decision.message ?: "Règle Active",
+            ruleTitle = ruleTitle,
             customMessage = customMsg,
             statusPillOverride = statusPillOverride,
             targetEndInstant = targetEnd,
@@ -314,6 +346,21 @@ class BlockEnforcementCoordinator(
         _overlayState.value = uiModel
         if (!isReevaluation) {
             onBlockTriggered()
+        }
+    }
+
+    private suspend fun clearViewingWindowIdempotently() {
+        withContext(Dispatchers.IO) {
+            gamificationStore.update { state ->
+                if (state.viewingWindowPackage == null && state.viewingWindowExpiresAtTimestamp == null) {
+                    state
+                } else {
+                    state.copy(
+                        viewingWindowPackage = null,
+                        viewingWindowExpiresAtTimestamp = null
+                    )
+                }
+            }
         }
     }
 

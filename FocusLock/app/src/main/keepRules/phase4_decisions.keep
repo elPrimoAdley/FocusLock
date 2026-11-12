@@ -1,0 +1,28 @@
+# ==============================================================================
+# FocusLock — Phase 4 — Décisions et Contraintes (à appliquer à chaque réponse)
+# ==============================================================================
+#
+# # Décisions d'Architecture & Fonctionnelles — Phase 4 (Coffre Instagram & Insights)
+#
+# ## Cadre Général Phase 4
+# - **Phase courante :** 4
+# - **Nouvelle dépendance autorisée :** `androidx.room:room-testing` (`androidTestImplementation` uniquement).
+# - **Hors périmètre Phase 4 :** Option B du coffre (miniatures/médias locaux, `MetadataExtractor`), PIN PBKDF2, Mindful Edits et écran Santé Samsung (réservés à la Phase 5). Toujours **zéro permission `INTERNET`**.
+# - **Migration Base de Données :** Première migration Room manuelle (`MIGRATION_1_2`, `v1 → v2`) testée par instrumentation. `fallbackToDestructiveMigration` est strictement interdit.
+# - **Exécution & Temps :** Tous les calculs d'agrégation s'exécutent hors du thread principal (`Dispatchers.Default` / `Dispatchers.IO`), avec `Clock` + `ZoneId` injectés et sans `WorkManager`.
+#
+# ## Tableau des Décisions Validées (#12 à #22)
+#
+# | # | Sujet | Décision validée | Étapes |
+# | :--- | :--- | :--- | :--- |
+# | **12** | **Tags et statuts** | Un seul tag par fiche (champ `tag` existant). Préréglages : `Langues`, `Sport`, `Business`, `Inspiration`, `À étudier`, plus tags personnalisés. `À voir` = `isReviewed == false`, `Consulté` = `isReviewed == true` (automatique à la 1re ouverture), `Favori` = `isFavorite` indépendant. | 4.5 à 4.7 |
+# | **13** | **Compteur d'utilisation & Unicité** | Ajout de la colonne `openCount INTEGER NOT NULL DEFAULT 0` sur `saved_contents` et d'un index unique sur `sourceUrl` dans `MIGRATION_1_2` (avec déduplication SQL préventive avant création de l'index). | 4.3, 4.8 |
+# | **14** | **Fenêtre de consultation** | Durée : **3 min**. « Ouvrir le post » est refusé si le `RuleEngine` bloque actuellement Instagram. Si autorisé, une fenêtre de 3 min démarre ; à son expiration (si Instagram est au premier plan ou réouvert), retour à l'accueil + overlay « Consultation terminée » (`VIEWING_WINDOW_ENDED`, exclu du compteur « Distractions évitées »). Si Instagram n'est pas installé : refus, aucun repli vers un navigateur. | 4.2, 4.8, 4.9 |
+# | **15** | **Règles de capture** | Seuls les liens `https` vers `instagram.com`, `www.instagram.com` et `instagr.am` sont acceptés. L'URL est normalisée (suppression des query params de suivi type `igsh`/`utm_*` et slash final). Les doublons sont détectés sur l'URL normalisée. Le reste du texte partagé va dans `extractedCaption` (tronqué à 2 000 caractères max). | 4.1, 4.5 |
+# | **16** | **Mesure du temps d'écran** | Basée sur `ACTIVITY_RESUMED` / `ACTIVITY_PAUSED` / `ACTIVITY_STOPPED` et les événements d'écran allumé/éteint (`SCREEN_INTERACTIVE` / `SCREEN_NON_INTERACTIVE`). Le temps total d'écran correspond à l'**union des intervalles** (le multifenêtre/pop-up ne compte pas double). Exclus : clavier (IME), `SystemUI`, launcher Samsung, `FocusLock`. | 4.10 à 4.12 |
+# | **17** | **Historique quotidien** | Nouvelle table `DailyUsageEntity(epochDay, packageName, totalMs)` (clé primaire composite `(epochDay, packageName)`), alimentée par un rattrapage idempotent des jours passés révolus (jamais le jour courant). Le détail horaire 24 h d'un jour passé reste disponible tant qu'Android conserve les événements bruts. | 4.3, 4.13 |
+# | **18** | **Périodes (Jour, Semaine, Tendance)** | **Jour** = histogramme 24 h empilé. **Semaine** = 7 jours, lundi → dimanche. **Tendance** = 8 dernières semaines (moyenne quotidienne + écart vs semaine précédente). Un jour sans données (avant installation) est marqué « indisponible » (et exclu des moyennes) et non `0`. | 4.14 à 4.16 |
+# | **19** | **Balance (Temps d'éveil)** | Fenêtre d'éveil réglable dans `DataStore` (défaut `07:00–23:00`, clés `awakeStartMinutes = 420`, `awakeEndMinutes = 1380`). Pour aujourd'hui : temps écoulé depuis le début de la fenêtre (plancher à `1 min` pour éviter toute division par zéro). | 4.18 |
+# | **20** | **Heatmap des séries** | Intensité sur 5 niveaux selon les minutes de focus des sessions `COMPLETED` du jour (`0`, `1–29`, `30–59`, `60–119`, `>=120`), complétée par un repère menthe lorsque le jour valide la série quotidienne (même logique que `StreakEvaluator` 3.5). | 4.19 |
+# | **21** | **Catégories et couleurs** | Application sans entrée `AppMetadataEntity` = affichée « À classer » (comptabilisée dans `Neutral`). Couleurs : `Distracting` = Violet `#A78BFA` (nouveau token, le corail `#F87171` restant réservé aux malus/alertes), `Neutral` = `#60A5FA`, `Productive` = `#34D399`. | 4.16, 4.17 |
+# | **22** | **Journal d'audit** | Conservation glissante de **90 jours** (purge idempotente au démarrage) et affichage paginé/incrémental par lots de **50 entrées**. | 4.20 |

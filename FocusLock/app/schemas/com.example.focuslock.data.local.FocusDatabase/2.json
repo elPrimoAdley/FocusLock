@@ -1,0 +1,487 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 2,
+    "identityHash": "a2f183a7be10440a7cf5ca3ce25b089c",
+    "entities": [
+      {
+        "tableName": "rules",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `ruleType` TEXT NOT NULL, `targetPackagesJson` TEXT NOT NULL, `startTimeMinutes` INTEGER, `endTimeMinutes` INTEGER, `activeDaysBitmask` INTEGER NOT NULL, `dailyQuotaMinutes` INTEGER, `cycleIntervalDays` INTEGER, `cycleStartEpochDay` INTEGER, `pauseUntilTimestamp` INTEGER, `isStrictLocked` INTEGER NOT NULL, `isEnabled` INTEGER NOT NULL, `customBlockMessage` TEXT, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ruleType",
+            "columnName": "ruleType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "targetPackagesJson",
+            "columnName": "targetPackagesJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startTimeMinutes",
+            "columnName": "startTimeMinutes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "endTimeMinutes",
+            "columnName": "endTimeMinutes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "activeDaysBitmask",
+            "columnName": "activeDaysBitmask",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dailyQuotaMinutes",
+            "columnName": "dailyQuotaMinutes",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "cycleIntervalDays",
+            "columnName": "cycleIntervalDays",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "cycleStartEpochDay",
+            "columnName": "cycleStartEpochDay",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "pauseUntilTimestamp",
+            "columnName": "pauseUntilTimestamp",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "isStrictLocked",
+            "columnName": "isStrictLocked",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isEnabled",
+            "columnName": "isEnabled",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "customBlockMessage",
+            "columnName": "customBlockMessage",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        }
+      },
+      {
+        "tableName": "quest_tasks",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `description` TEXT NOT NULL, `priority` TEXT NOT NULL, `xpValue` INTEGER NOT NULL, `dueAtTimestamp` INTEGER, `completedAtTimestamp` INTEGER, `isRoutineChecklistItem` INTEGER NOT NULL, `parentRoutineId` TEXT, `penaltyApplied` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "description",
+            "columnName": "description",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "priority",
+            "columnName": "priority",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "xpValue",
+            "columnName": "xpValue",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "dueAtTimestamp",
+            "columnName": "dueAtTimestamp",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "completedAtTimestamp",
+            "columnName": "completedAtTimestamp",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "isRoutineChecklistItem",
+            "columnName": "isRoutineChecklistItem",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "parentRoutineId",
+            "columnName": "parentRoutineId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "penaltyApplied",
+            "columnName": "penaltyApplied",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_quest_tasks_parentRoutineId",
+            "unique": false,
+            "columnNames": [
+              "parentRoutineId"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_quest_tasks_parentRoutineId` ON `${TABLE_NAME}` (`parentRoutineId`)"
+          }
+        ]
+      },
+      {
+        "tableName": "focus_sessions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `sessionType` TEXT NOT NULL, `label` TEXT NOT NULL, `startedAt` INTEGER NOT NULL, `plannedEndAt` INTEGER NOT NULL, `actualEndedAt` INTEGER, `whitelistedPackagesJson` TEXT NOT NULL, `summaryValidationNote` TEXT, `status` TEXT NOT NULL, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sessionType",
+            "columnName": "sessionType",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "label",
+            "columnName": "label",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAt",
+            "columnName": "startedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "plannedEndAt",
+            "columnName": "plannedEndAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "actualEndedAt",
+            "columnName": "actualEndedAt",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "whitelistedPackagesJson",
+            "columnName": "whitelistedPackagesJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "summaryValidationNote",
+            "columnName": "summaryValidationNote",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_focus_sessions_status",
+            "unique": false,
+            "columnNames": [
+              "status"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_focus_sessions_status` ON `${TABLE_NAME}` (`status`)"
+          }
+        ]
+      },
+      {
+        "tableName": "saved_contents",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `sourceUrl` TEXT NOT NULL, `extractedCaption` TEXT, `userTitle` TEXT NOT NULL, `personalNote` TEXT, `tag` TEXT NOT NULL, `savedAtTimestamp` INTEGER NOT NULL, `isReviewed` INTEGER NOT NULL, `isFavorite` INTEGER NOT NULL, `openCount` INTEGER NOT NULL DEFAULT 0, `thumbnailLocalPath` TEXT, `mediaLocalPath` TEXT, PRIMARY KEY(`id`))",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sourceUrl",
+            "columnName": "sourceUrl",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "extractedCaption",
+            "columnName": "extractedCaption",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "userTitle",
+            "columnName": "userTitle",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "personalNote",
+            "columnName": "personalNote",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "tag",
+            "columnName": "tag",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "savedAtTimestamp",
+            "columnName": "savedAtTimestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isReviewed",
+            "columnName": "isReviewed",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isFavorite",
+            "columnName": "isFavorite",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "openCount",
+            "columnName": "openCount",
+            "affinity": "INTEGER",
+            "notNull": true,
+            "defaultValue": "0"
+          },
+          {
+            "fieldPath": "thumbnailLocalPath",
+            "columnName": "thumbnailLocalPath",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "mediaLocalPath",
+            "columnName": "mediaLocalPath",
+            "affinity": "TEXT"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_saved_contents_tag",
+            "unique": false,
+            "columnNames": [
+              "tag"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_saved_contents_tag` ON `${TABLE_NAME}` (`tag`)"
+          },
+          {
+            "name": "index_saved_contents_savedAtTimestamp",
+            "unique": false,
+            "columnNames": [
+              "savedAtTimestamp"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_saved_contents_savedAtTimestamp` ON `${TABLE_NAME}` (`savedAtTimestamp`)"
+          },
+          {
+            "name": "index_saved_contents_sourceUrl",
+            "unique": true,
+            "columnNames": [
+              "sourceUrl"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_saved_contents_sourceUrl` ON `${TABLE_NAME}` (`sourceUrl`)"
+          }
+        ]
+      },
+      {
+        "tableName": "block_audit_logs",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `timestamp` INTEGER NOT NULL, `blockedPackageName` TEXT NOT NULL, `triggerRuleId` TEXT, `reasonCode` TEXT NOT NULL, `explanationText` TEXT NOT NULL)",
+        "fields": [
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "timestamp",
+            "columnName": "timestamp",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "blockedPackageName",
+            "columnName": "blockedPackageName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "triggerRuleId",
+            "columnName": "triggerRuleId",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "reasonCode",
+            "columnName": "reasonCode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "explanationText",
+            "columnName": "explanationText",
+            "affinity": "TEXT",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": true,
+          "columnNames": [
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_block_audit_logs_blockedPackageName_timestamp",
+            "unique": false,
+            "columnNames": [
+              "blockedPackageName",
+              "timestamp"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_block_audit_logs_blockedPackageName_timestamp` ON `${TABLE_NAME}` (`blockedPackageName`, `timestamp`)"
+          }
+        ]
+      },
+      {
+        "tableName": "app_metadata",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`packageName` TEXT NOT NULL, `category` TEXT NOT NULL, `isAlwaysWhitelisted` INTEGER NOT NULL, PRIMARY KEY(`packageName`))",
+        "fields": [
+          {
+            "fieldPath": "packageName",
+            "columnName": "packageName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "category",
+            "columnName": "category",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "isAlwaysWhitelisted",
+            "columnName": "isAlwaysWhitelisted",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "packageName"
+          ]
+        }
+      },
+      {
+        "tableName": "daily_usage",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`epochDay` INTEGER NOT NULL, `packageName` TEXT NOT NULL, `totalMs` INTEGER NOT NULL, PRIMARY KEY(`epochDay`, `packageName`))",
+        "fields": [
+          {
+            "fieldPath": "epochDay",
+            "columnName": "epochDay",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "packageName",
+            "columnName": "packageName",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "totalMs",
+            "columnName": "totalMs",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "epochDay",
+            "packageName"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'a2f183a7be10440a7cf5ca3ce25b089c')"
+    ]
+  }
+}

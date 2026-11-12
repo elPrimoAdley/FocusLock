@@ -174,8 +174,17 @@ interface BlockAuditLogDao {
     @Query("SELECT COUNT(*) FROM block_audit_logs WHERE blockedPackageName = :packageName")
     suspend fun getTotalCountForPackage(packageName: String): Int
 
-    @Query("SELECT COUNT(*) FROM block_audit_logs WHERE timestamp >= :startOfDayTimestamp")
+    @Query(
+        """
+        SELECT COUNT(*) FROM block_audit_logs 
+        WHERE timestamp >= :startOfDayTimestamp 
+          AND reasonCode != 'VIEWING_WINDOW_ENDED'
+        """
+    )
     fun observeTotalDistractionsPreventedSince(startOfDayTimestamp: Long): Flow<Int>
+
+    @Query("DELETE FROM block_audit_logs WHERE timestamp < :cutoffTimestamp")
+    suspend fun deleteLogsOlderThan(cutoffTimestamp: Long): Int
 }
 
 @Dao
@@ -195,9 +204,60 @@ interface SavedContentDao {
     @Query("SELECT * FROM saved_contents ORDER BY savedAtTimestamp DESC")
     fun observeAllSavedContents(): Flow<List<SavedContentEntity>>
 
+    @Query("SELECT * FROM saved_contents WHERE id = :id LIMIT 1")
+    suspend fun getSavedContentById(id: String): SavedContentEntity?
+
+    @Query("SELECT * FROM saved_contents WHERE sourceUrl = :sourceUrl LIMIT 1")
+    suspend fun getSavedContentBySourceUrl(sourceUrl: String): SavedContentEntity?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertSavedContent(content: SavedContentEntity): Long
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertSavedContent(content: SavedContentEntity)
 
+    @Query(
+        """
+        UPDATE saved_contents 
+        SET userTitle = :userTitle, tag = :tag, personalNote = :personalNote 
+        WHERE id = :id
+        """
+    )
+    suspend fun updateTitleTagAndNote(id: String, userTitle: String, tag: String, personalNote: String?)
+
+    @Query("UPDATE saved_contents SET isReviewed = :isReviewed WHERE id = :id")
+    suspend fun updateReviewedStatus(id: String, isReviewed: Boolean)
+
+    @Query("UPDATE saved_contents SET isFavorite = :isFavorite WHERE id = :id")
+    suspend fun updateFavoriteStatus(id: String, isFavorite: Boolean)
+
+    @Query("UPDATE saved_contents SET openCount = openCount + 1, isReviewed = 1 WHERE id = :id")
+    suspend fun incrementOpenCountAndMarkReviewed(id: String)
+
     @Query("DELETE FROM saved_contents WHERE id = :id")
     suspend fun deleteSavedContentById(id: String)
+}
+
+@Dao
+interface DailyUsageDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertDailyUsages(entries: List<com.example.focuslock.data.local.entity.DailyUsageEntity>)
+
+    @Query("SELECT * FROM daily_usage WHERE epochDay = :epochDay")
+    suspend fun getUsageForDay(epochDay: Long): List<com.example.focuslock.data.local.entity.DailyUsageEntity>
+
+    @Query("SELECT * FROM daily_usage WHERE epochDay BETWEEN :startEpochDay AND :endEpochDay")
+    fun observeUsageBetweenDays(
+        startEpochDay: Long,
+        endEpochDay: Long
+    ): Flow<List<com.example.focuslock.data.local.entity.DailyUsageEntity>>
+
+    @Query("SELECT * FROM daily_usage WHERE epochDay BETWEEN :startEpochDay AND :endEpochDay")
+    suspend fun getUsageBetweenDays(
+        startEpochDay: Long,
+        endEpochDay: Long
+    ): List<com.example.focuslock.data.local.entity.DailyUsageEntity>
+
+    @Query("SELECT MAX(epochDay) FROM daily_usage")
+    suspend fun getMaxRecordedEpochDay(): Long?
 }

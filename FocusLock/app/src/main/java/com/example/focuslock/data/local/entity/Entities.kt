@@ -72,7 +72,11 @@ data class FocusSessionEntity(
  */
 @Entity(
     tableName = "saved_contents",
-    indices = [Index(value = ["tag"]), Index(value = ["savedAtTimestamp"])]
+    indices = [
+        Index(value = ["tag"]),
+        Index(value = ["savedAtTimestamp"]),
+        Index(value = ["sourceUrl"], unique = true)
+    ]
 )
 data class SavedContentEntity(
     @PrimaryKey
@@ -85,6 +89,8 @@ data class SavedContentEntity(
     val savedAtTimestamp: Long,
     val isReviewed: Boolean,
     val isFavorite: Boolean,
+    @androidx.room.ColumnInfo(defaultValue = "0")
+    val openCount: Int = 0,
     val thumbnailLocalPath: String?,
     val mediaLocalPath: String?
 )
@@ -116,4 +122,18 @@ data class AppMetadataEntity(
     val packageName: String,
     val category: String, // DISTRACTING, NEUTRAL, PRODUCTIVE
     val isAlwaysWhitelisted: Boolean
+)
+
+/**
+ * 7. Historique quotidien d'usage par application (Phase 4 - Décision #17).
+ * Clé primaire composite (epochDay, packageName).
+ */
+@Entity(
+    tableName = "daily_usage",
+    primaryKeys = ["epochDay", "packageName"]
+)
+data class DailyUsageEntity(
+    val epochDay: Long,
+    val packageName: String,
+    val totalMs: Long
 )

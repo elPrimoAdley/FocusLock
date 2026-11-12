@@ -123,6 +123,7 @@ fun SavedPost.toEntity(): SavedContentEntity = SavedContentEntity(
     savedAtTimestamp = savedAt.toEpochMilli(),
     isReviewed = isReviewed,
     isFavorite = isFavorite,
+    openCount = openCount,
     thumbnailLocalPath = thumbnailLocalPath,
     mediaLocalPath = mediaLocalPath
 )
@@ -137,6 +138,7 @@ fun SavedContentEntity.toDomain(): SavedPost = SavedPost(
     savedAt = Instant.ofEpochMilli(savedAtTimestamp),
     isReviewed = isReviewed,
     isFavorite = isFavorite,
+    openCount = openCount,
     thumbnailLocalPath = thumbnailLocalPath,
     mediaLocalPath = mediaLocalPath
 )

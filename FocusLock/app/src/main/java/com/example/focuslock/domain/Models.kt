@@ -161,6 +161,7 @@ data class SavedPost(
     val savedAt: Instant,
     val isReviewed: Boolean = false,
     val isFavorite: Boolean = false,
+    val openCount: Int = 0,
     val thumbnailLocalPath: String? = null,
     val mediaLocalPath: String? = null
 )
@@ -186,17 +187,24 @@ data class AppMetadata(
     val isAlwaysWhitelisted: Boolean = false
 )
 
+data class ViewingWindow(
+    val packageName: String,
+    val expiresAt: Instant
+)
+
 data class SecurityState(
     val hardwareWhitelistedPackages: Set<String> = DEFAULT_HARDWARE_WHITELIST,
     val isCallInProgress: Boolean = false,
     val emergencyUnlockUntil: Instant? = null,
-    val quotaMalusReductionPercent: Int = 0
+    val quotaMalusReductionPercent: Int = 0,
+    val viewingWindow: ViewingWindow? = null
 ) {
     companion object {
         val DEFAULT_HARDWARE_WHITELIST: Set<String> = setOf(
             "com.example.focuslock",
             "com.android.systemui",
             "com.sec.android.app.launcher",
+            "com.google.android.apps.nexuslauncher",
             "com.samsung.android.dialer",
             "com.google.android.dialer",
             "com.android.server.telecom",
@@ -213,7 +221,8 @@ enum class BlockReason {
     FOCUS_DEBT_PENALTY,
     MORNING_ROUTINE,
     SABBATICAL_OR_DETOX,
-    SCHEDULE_OR_QUOTA
+    SCHEDULE_OR_QUOTA,
+    VIEWING_WINDOW_ENDED
 }
 
 sealed interface BlockDecision {

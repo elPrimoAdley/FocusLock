@@ -84,49 +84,32 @@ object RuleEngine {
         val applicableRules = rules.filter { rule ->
             rule.isEnabled && foregroundPackage in rule.targetPackages
         }
-        if (applicableRules.isEmpty()) {
-            return BlockDecision.Allow
-        }
 
-        // ==================== NIVEAU 5 : ROUTINE OBLIGATOIRE (EX. MORNING ROUTINE) ====================
-        val currentMinuteOfDay = zonedNow.hour * 60 + zonedNow.minute
-        for (rule in applicableRules.filter { it.ruleType == RuleType.ROUTINE }) {
-            if (isWithinTimeWindow(zonedNow, currentMinuteOfDay, rule)) {
-                val checklist = tasks.filter {
-                    it.isRoutineChecklistItem && it.parentRoutineId == rule.id
-                }
-                if (! com.example.focuslock.domain.isRoutineChecklistCompleteToday(checklist, now, clock.zone)) {
-                    return BlockDecision.Block(
-                        reason = BlockReason.MORNING_ROUTINE,
-                        ruleId = rule.id,
-                        message = rule.customBlockMessage ?: rule.title
-                    )
-                }
-            }
-        }
-
-        // ==================== NIVEAU 6 : PAUSE SABBATIQUE & DÉTOX INTERMITTENTE ====================
-        val todayEpochDay = zonedNow.toLocalDate().toEpochDay()
-        for (rule in applicableRules) {
-            when (rule.ruleType) {
-                RuleType.SABBATICAL -> {
-                    val pauseUntil = rule.pauseUntil
-                    if (pauseUntil != null && now.isBefore(pauseUntil)) {
+        if (applicableRules.isNotEmpty()) {
+            // ==================== NIVEAU 5 : ROUTINE OBLIGATOIRE (EX. MORNING ROUTINE) ====================
+            val currentMinuteOfDay = zonedNow.hour * 60 + zonedNow.minute
+            for (rule in applicableRules.filter { it.ruleType == RuleType.ROUTINE }) {
+                if (isWithinTimeWindow(zonedNow, currentMinuteOfDay, rule)) {
+                    val checklist = tasks.filter {
+                        it.isRoutineChecklistItem && it.parentRoutineId == rule.id
+                    }
+                    if (!com.example.focuslock.domain.isRoutineChecklistCompleteToday(checklist, now, clock.zone)) {
                         return BlockDecision.Block(
-                            reason = BlockReason.SABBATICAL_OR_DETOX,
+                            reason = BlockReason.MORNING_ROUTINE,
                             ruleId = rule.id,
                             message = rule.customBlockMessage ?: rule.title
                         )
                     }
                 }
-                RuleType.ALTERNATING_DETOX -> {
-                    val interval = rule.cycleIntervalDays
-                    val startEpochDay = rule.cycleStartEpochDay
-                    // Protection contre cycleIntervalDays <= 0 (division par zéro) et dates dans le futur
-                    if (interval != null && interval > 0 && startEpochDay != null && todayEpochDay >= startEpochDay) {
-                        val daysElapsed = todayEpochDay - startEpochDay
-                        // Jour 0 = ON (Autorisé), Jours où modulo != 0 = OFF (Bloqué)
-                        if (daysElapsed % interval != 0L) {
+            }
+
+            // ==================== NIVEAU 6 : PAUSE SABBATIQUE & DÉTOX INTERMITTENTE ====================
+            val todayEpochDay = zonedNow.toLocalDate().toEpochDay()
+            for (rule in applicableRules) {
+                when (rule.ruleType) {
+                    RuleType.SABBATICAL -> {
+                        val pauseUntil = rule.pauseUntil
+                        if (pauseUntil != null && now.isBefore(pauseUntil)) {
                             return BlockDecision.Block(
                                 reason = BlockReason.SABBATICAL_OR_DETOX,
                                 ruleId = rule.id,
@@ -134,51 +117,79 @@ object RuleEngine {
                             )
                         }
                     }
+                    RuleType.ALTERNATING_DETOX -> {
+                        val interval = rule.cycleIntervalDays
+                        val startEpochDay = rule.cycleStartEpochDay
+                        // Protection contre cycleIntervalDays <= 0 (division par zéro) et dates dans le futur
+                        if (interval != null && interval > 0 && startEpochDay != null && todayEpochDay >= startEpochDay) {
+                            val daysElapsed = todayEpochDay - startEpochDay
+                            // Jour 0 = ON (Autorisé), Jours où modulo != 0 = OFF (Bloqué)
+                            if (daysElapsed % interval != 0L) {
+                                return BlockDecision.Block(
+                                    reason = BlockReason.SABBATICAL_OR_DETOX,
+                                    ruleId = rule.id,
+                                    message = rule.customBlockMessage ?: rule.title
+                                )
+                            }
+                        }
+                    }
+                    else -> Unit
                 }
-                else -> Unit
             }
-        }
 
-        // ==================== NIVEAU 7A : PLAGES HORAIRES PROGRAMMÉES (SCHEDULES) ====================
-        for (rule in applicableRules.filter { it.ruleType == RuleType.SCHEDULE }) {
-            if (isWithinTimeWindow(zonedNow, currentMinuteOfDay, rule)) {
-                return BlockDecision.Block(
-                    reason = BlockReason.SCHEDULE_OR_QUOTA,
-                    ruleId = rule.id,
-                    message = rule.customBlockMessage ?: rule.title
-                )
-            }
-        }
-
-        // ==================== NIVEAU 7B : QUOTAS JOURNALIERS (POOL PARTAGÉ + MALUS) ====================
-        val isRecreationCreditValid = recreationCredit != null &&
-            now.isBefore(recreationCredit.validUntil) &&
-            (recreationCredit.packageName == null || recreationCredit.packageName == foregroundPackage)
-
-        if (!isRecreationCreditValid) {
-            val clampedMalusPercent = securityState.quotaMalusReductionPercent.coerceIn(0, 100)
-            for (rule in applicableRules.filter { it.ruleType == RuleType.DAILY_QUOTA }) {
-                if (!DaysBitmask.isDayActive(rule.activeDaysBitmask, zonedNow.dayOfWeek)) {
-                    continue
-                }
-                val baseQuota = rule.dailyQuotaMinutes ?: continue
-                if (baseQuota < 0) continue
-
-                // Arrondi documenté : troncature entière vers zéro (plancher entier)
-                val effectiveQuota = (baseQuota * (100 - clampedMalusPercent)) / 100
-
-                // Pool partagé : somme de l'usage du jour de toutes les apps du groupe
-                val sharedPoolUsage = rule.targetPackages.sumOf { pkg ->
-                    (todayUsageMinutes[pkg] ?: 0).coerceAtLeast(0)
-                }
-
-                if (sharedPoolUsage >= effectiveQuota) {
+            // ==================== NIVEAU 7A : PLAGES HORAIRES PROGRAMMÉES (SCHEDULES) ====================
+            for (rule in applicableRules.filter { it.ruleType == RuleType.SCHEDULE }) {
+                if (isWithinTimeWindow(zonedNow, currentMinuteOfDay, rule)) {
                     return BlockDecision.Block(
                         reason = BlockReason.SCHEDULE_OR_QUOTA,
                         ruleId = rule.id,
                         message = rule.customBlockMessage ?: rule.title
                     )
                 }
+            }
+
+            // ==================== NIVEAU 7B : QUOTAS JOURNALIERS (POOL PARTAGÉ + MALUS) ====================
+            val isRecreationCreditValid = recreationCredit != null &&
+                now.isBefore(recreationCredit.validUntil) &&
+                (recreationCredit.packageName == null || recreationCredit.packageName == foregroundPackage)
+
+            if (!isRecreationCreditValid) {
+                val clampedMalusPercent = securityState.quotaMalusReductionPercent.coerceIn(0, 100)
+                for (rule in applicableRules.filter { it.ruleType == RuleType.DAILY_QUOTA }) {
+                    if (!DaysBitmask.isDayActive(rule.activeDaysBitmask, zonedNow.dayOfWeek)) {
+                        continue
+                    }
+                    val baseQuota = rule.dailyQuotaMinutes ?: continue
+                    if (baseQuota < 0) continue
+
+                    // Arrondi documenté : troncature entière vers zéro (plancher entier)
+                    val effectiveQuota = (baseQuota * (100 - clampedMalusPercent)) / 100
+
+                    // Pool partagé : somme de l'usage du jour de toutes les apps du groupe
+                    val sharedPoolUsage = rule.targetPackages.sumOf { pkg ->
+                        (todayUsageMinutes[pkg] ?: 0).coerceAtLeast(0)
+                    }
+
+                    if (sharedPoolUsage >= effectiveQuota) {
+                        return BlockDecision.Block(
+                            reason = BlockReason.SCHEDULE_OR_QUOTA,
+                            ruleId = rule.id,
+                            message = rule.customBlockMessage ?: rule.title
+                        )
+                    }
+                }
+            }
+        }
+
+        // ==================== NIVEAU 7C (4.2) : FENÊTRE DE CONSULTATION DU COFFRE EXPIRÉE ====================
+        val viewingWindow = securityState.viewingWindow
+        if (viewingWindow != null && viewingWindow.packageName == foregroundPackage) {
+            if (!now.isBefore(viewingWindow.expiresAt)) {
+                return BlockDecision.Block(
+                    reason = BlockReason.VIEWING_WINDOW_ENDED,
+                    ruleId = null,
+                    message = "Consultation terminée (3 min écoulées)"
+                )
             }
         }
 

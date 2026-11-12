@@ -378,6 +378,7 @@ private fun statusBadgeLabelFor(reason: BlockReason): String = when (reason) {
     BlockReason.MORNING_ROUTINE -> "🌅 MORNING ROUTINE • CHECKLIST REQUISE"
     BlockReason.SABBATICAL_OR_DETOX -> "🌿 PAUSE DÉTOX • JOUR OFF / SABBATIQUE"
     BlockReason.SCHEDULE_OR_QUOTA -> "⏳ PLANNING & QUOTA • ACCÈS VERROUILLÉ"
+    BlockReason.VIEWING_WINDOW_ENDED -> "📥 COFFRE DE CONTENU • CONSULTATION TERMINÉE"
 }
 
 @Composable
@@ -386,7 +387,7 @@ private fun statusColorFor(
     colors: com.example.focuslock.ui.theme.FocusColors
 ): Color = when (reason) {
     BlockReason.FOCUS_DEBT_PENALTY -> colors.softCoral
-    BlockReason.MORNING_ROUTINE -> colors.mintClarityStart
+    BlockReason.MORNING_ROUTINE, BlockReason.VIEWING_WINDOW_ENDED -> colors.mintClarityStart
     else -> colors.electricAzureStart
 }
 
